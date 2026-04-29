@@ -1,0 +1,201 @@
+---
+title: "Using React hooks to handle speech recognition events"
+description: "Subscribe to speech recognition events like start, end, result, error, and volumechange inside React components using the useSpeechRecognitionEvent hook."
+---
+
+The `useSpeechRecognitionEvent` hook is the recommended way to consume speech recognition events in React components. It wraps the native event listener and automatically removes the subscription when the component unmounts, so you never need to manually clean up listeners. Prefer this approach over the direct module API when working inside React components — use the direct API only when you need to subscribe to events outside of the React tree.
+
+## useSpeechRecognitionEvent
+
+The hook accepts an event name and a callback. It registers the listener when the component mounts and removes it when the component unmounts or when the dependency inputs change.
+
+```tsx
+import { useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+useSpeechRecognitionEvent(eventName, listener);
+```
+
+<Note>
+  The hook is built on top of Expo's `useEventListener` utility, so it follows the same rules as other React hooks — call it at the top level of a component or custom hook, not inside loops or conditionals.
+</Note>
+
+## Supported events
+
+| Event | Payload | Description |
+|---|---|---|
+| `start` | `null` | Speech recognition has started. Use this to show a recording indicator. |
+| `end` | `null` | The recognition service has disconnected. Always the last event in a session. |
+| `result` | `{ isFinal: boolean, results: ExpoSpeechRecognitionResult[] }` | A word or phrase was recognized. May be a partial or final result. |
+| `error` | `{ error: string, message: string, code?: number }` | A recognition error occurred. |
+| `audiostart` | `{ uri: string \| null }` | Audio capturing started. `uri` is set when `recordingOptions.persist` is enabled. |
+| `audioend` | `{ uri: string \| null }` | Audio capturing ended. The file at `uri` is safe to use after this event. |
+| `soundstart` | `null` | Any sound (speech or noise) has been detected. |
+| `soundend` | `null` | Sound has stopped being detected. |
+| `speechstart` | `null` | Sound recognized as potential speech was detected. |
+| `speechend` | `null` | Speech recognized by the service stopped being detected. (Not supported on iOS.) |
+| `nomatch` | `null` | A final result was returned with no significant recognition. |
+| `volumechange` | `{ value: number }` | Input volume changed. Value ranges from -2 to 10; values below 0 are inaudible. Requires `volumeChangeEventOptions.enabled: true`. |
+| `languagedetection` | `{ detectedLanguage, confidence, topLocaleAlternatives }` | Language detection results. Android 14+ only with `com.google.android.as`. |
+
+## Basic example
+
+The following component tracks whether recognition is active and accumulates the latest transcript.
+
+```tsx
+import { useState } from "react";
+import { Button, ScrollView, Text, View } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+function App() {
+  const [recognizing, setRecognizing] = useState(false);
+  const [transcript, setTranscript] = useState("");
+
+  useSpeechRecognitionEvent("start", () => setRecognizing(true));
+  useSpeechRecognitionEvent("end", () => setRecognizing(false));
+  useSpeechRecognitionEvent("result", (event) => {
+    setTranscript(event.results[0]?.transcript);
+  });
+  useSpeechRecognitionEvent("error", (event) => {
+    console.log("error code:", event.error, "error message:", event.message);
+  });
+
+  const handleStart = async () => {
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      console.warn("Permissions not granted", result);
+      return;
+    }
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,
+      continuous: false,
+    });
+  };
+
+  return (
+    <View>
+      {!recognizing ? (
+        <Button title="Start" onPress={handleStart} />
+      ) : (
+        <Button
+          title="Stop"
+          onPress={() => ExpoSpeechRecognitionModule.stop()}
+        />
+      )}
+      <ScrollView>
+        <Text>{transcript}</Text>
+      </ScrollView>
+    </View>
+  );
+}
+```
+
+## Using multiple hooks
+
+You can call `useSpeechRecognitionEvent` multiple times in the same component to handle different events independently. Each call registers its own listener.
+
+```tsx
+function RecognitionStatus() {
+  const [phase, setPhase] = useState<"idle" | "listening" | "processing">("idle");
+  const [volume, setVolume] = useState(0);
+  const [transcript, setTranscript] = useState("");
+
+  useSpeechRecognitionEvent("start", () => setPhase("listening"));
+  useSpeechRecognitionEvent("speechstart", () => setPhase("listening"));
+  useSpeechRecognitionEvent("speechend", () => setPhase("processing"));
+  useSpeechRecognitionEvent("end", () => setPhase("idle"));
+
+  useSpeechRecognitionEvent("volumechange", (event) => {
+    setVolume(event.value);
+  });
+
+  useSpeechRecognitionEvent("result", (event) => {
+    if (event.isFinal) {
+      setTranscript(event.results[0]?.transcript ?? "");
+    }
+  });
+
+  useSpeechRecognitionEvent("error", (event) => {
+    console.error(event.error, event.message);
+    setPhase("idle");
+  });
+
+  // render ...
+}
+```
+
+## Understanding result events
+
+The `result` event fires for both partial (interim) and final results. The `isFinal` flag tells you whether the recognition is complete for a given utterance.
+
+```tsx
+useSpeechRecognitionEvent("result", (event) => {
+  console.log("isFinal:", event.isFinal);
+
+  // results is an array of alternative transcripts (length depends on maxAlternatives)
+  for (const result of event.results) {
+    console.log("transcript:", result.transcript);
+
+    // confidence: 0.0–1.0, or -1 when unavailable
+    console.log("confidence:", result.confidence);
+
+    // segments: word-level timing and confidence (iOS always, Android 14+ on-device only)
+    for (const segment of result.segments) {
+      console.log(
+        segment.segment,         // e.g. "Hello"
+        segment.startTimeMillis, // e.g. 0
+        segment.endTimeMillis,   // e.g. 500
+        segment.confidence,      // 0.0–1.0, or -1
+      );
+    }
+  }
+});
+```
+
+<Note>
+  On Android in continuous mode, recognition runs as a segmented session. Each segment produces its own partial and final results. On iOS, expect a single final result before recognition stops.
+</Note>
+
+## Language detection event
+
+The `languagedetection` event is available on Android 14+ when using the `com.google.android.as` service. Enable it via `androidIntentOptions`.
+
+```tsx
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+function LanguageDetectionExample() {
+  useSpeechRecognitionEvent("languagedetection", (event) => {
+    console.log("Detected language:", event.detectedLanguage); // e.g. "en-us"
+    console.log("Confidence:", event.confidence);              // 0.0–1.0
+    console.log("Alternatives:", event.topLocaleAlternatives); // e.g. ["en-au", "en-gb"]
+  });
+
+  const handleStart = () => {
+    ExpoSpeechRecognitionModule.start({
+      androidRecognitionServicePackage: "com.google.android.as",
+      androidIntentOptions: {
+        EXTRA_ENABLE_LANGUAGE_DETECTION: true,
+      },
+    });
+  };
+
+  // render ...
+}
+```
+
+## Automatic cleanup
+
+Every call to `useSpeechRecognitionEvent` registers one listener. All listeners registered by a component are removed automatically when the component unmounts — no `useEffect` cleanup required.
+
+```tsx
+// These three listeners are all removed when the component unmounts
+useSpeechRecognitionEvent("start", handleStart);
+useSpeechRecognitionEvent("end", handleEnd);
+useSpeechRecognitionEvent("result", handleResult);
+```

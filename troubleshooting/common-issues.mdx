@@ -1,0 +1,163 @@
+---
+title: "Common expo-speech-recognition problems and solutions"
+description: "General troubleshooting for expo-speech-recognition including error codes, permission issues, improving single-word accuracy, and muting Android beeps."
+---
+
+Most issues with expo-speech-recognition fall into a handful of recurring patterns: an unhandled error code, a permission that has not been requested, a language model that needs to be downloaded, or recognition options that need tuning for short utterances. This page covers these cross-platform issues and shows how to handle them.
+
+<AccordionGroup>
+
+<Accordion title="Understanding error codes">
+
+All errors from the library arrive through the `error` event. The `event.error` field contains a string error code based on the [Web Speech API error codes](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognitionErrorEvent/error), with a few additions for Android.
+
+```tsx
+import { useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("error", (event) => {
+  console.log("Error code:", event.error);
+  console.log("Error message:", event.message);
+});
+```
+
+| Error code | Description |
+|---|---|
+| `aborted` | The user called `abort()` to cancel recognition. |
+| `audio-capture` | Audio recording error — the microphone could not be accessed or an audio route change failed. |
+| `interrupted` | (iOS only) The audio session was interrupted by a phone call, Siri, or an alarm. |
+| `bad-grammar` | The provided grammar is invalid. Web only. |
+| `language-not-supported` | The requested locale is not supported by the recognizer. |
+| `network` | Network communication required to complete recognition failed. |
+| `no-speech` | No final speech was detected during the session. |
+| `not-allowed` | Permission to use the microphone or speech recognizer was not granted. |
+| `service-not-allowed` | The recognizer service is unavailable. |
+| `busy` | The recognizer is busy and cannot accept new requests. |
+| `client` | (Android) An unknown client-side error occurred. Corresponds to `SpeechRecognizer.ERROR_CLIENT`. |
+| `speech-timeout` | (Android) No speech input was detected before the timeout. |
+| `unknown` | (Android) An unknown error occurred. |
+
+**Advanced error handling on Android**
+
+For Android, the `event.code` field provides the underlying native `SpeechRecognizer` error integer, which can help pinpoint specific failure modes:
+
+```tsx
+import {
+  SpeechRecognizerErrorAndroid,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("error", (event) => {
+  switch (event.code) {
+    case SpeechRecognizerErrorAndroid.ERROR_NETWORK_TIMEOUT:
+      console.log("Network timed out");
+      break;
+    case SpeechRecognizerErrorAndroid.ERROR_RECOGNIZER_BUSY:
+      console.log("Recognizer is busy — retry after a short delay");
+      break;
+    case SpeechRecognizerErrorAndroid.ERROR_LANGUAGE_UNAVAILABLE:
+      console.log("Language model is supported but not yet downloaded");
+      break;
+    case SpeechRecognizerErrorAndroid.ERROR_INSUFFICIENT_PERMISSIONS:
+      console.log("Microphone permission not granted");
+      break;
+    default:
+      console.log("Native error code:", event.code);
+  }
+});
+```
+
+</Accordion>
+
+<Accordion title="Improving accuracy of single-word prompts">
+
+When users speak a single letter, digit, or short word (for example "yes", "no", "a", "5"), the recognizer may not return a result or may wait for more speech before responding. The following options improve accuracy for short utterances.
+
+**iOS** — use the `confirmation` task hint:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  iosTaskHint: "confirmation",
+});
+```
+
+**Android** — switch to the `web_search` language model:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  androidIntentOptions: {
+    EXTRA_LANGUAGE_MODEL: "web_search",
+  },
+});
+```
+
+**Both platforms** — enable on-device recognition, which tends to handle short utterances more reliably:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  requiresOnDeviceRecognition: true,
+  iosTaskHint: "confirmation",
+  androidIntentOptions: {
+    EXTRA_LANGUAGE_MODEL: "web_search",
+  },
+});
+```
+
+**As a fallback** — record the audio and send it to an external transcription service. See [Persisting audio recordings](/guides/audio-recording) for how to capture the audio file.
+
+<Note>
+  Some external services (such as the Google Speech API) require a minimum audio duration of at least 3 seconds before they will process short utterances. Pad the recording or increase the session duration if you hit this limit.
+</Note>
+
+</Accordion>
+
+<Accordion title="Checking whether recognition is available">
+
+Before calling `start()`, check that recognition is available on the device. If it is not, calling `start()` will emit a `service-not-allowed` or `language-not-supported` error.
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const available = ExpoSpeechRecognitionModule.isRecognitionAvailable();
+
+if (!available) {
+  // Guide the user to enable the required service
+  // iOS: ask the user to enable Siri & Dictation under Settings → Siri & Search
+  // Android 13+: ask the user to install and enable com.google.android.tts
+  // Android 12-: ask the user to install and enable com.google.android.googlequicksearchbox
+  console.warn("Speech recognition is not available on this device.");
+} else {
+  ExpoSpeechRecognitionModule.start({ lang: "en-US" });
+}
+```
+
+</Accordion>
+
+<Accordion title="Getting the current recognition state">
+
+`getStateAsync()` returns the current internal state of the recognizer as a string. This can be useful for debugging or for guarding against double-start calls.
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const state = await ExpoSpeechRecognitionModule.getStateAsync();
+console.log("Current state:", state);
+// "inactive" | "starting" | "recognizing" | "stopping"
+```
+
+| State | Meaning |
+|---|---|
+| `inactive` | No recognition session is active. |
+| `starting` | Recognition has been requested but the session has not yet begun. |
+| `recognizing` | The session is active and processing audio. |
+| `stopping` | A stop request has been sent; waiting for the final result. |
+
+<Note>
+  Prefer relying on the `start`, `end`, and `error` events to track recognition state in your UI rather than polling `getStateAsync()`. Event-driven state management is more reliable and avoids timing issues.
+</Note>
+
+</Accordion>
+
+</AccordionGroup>

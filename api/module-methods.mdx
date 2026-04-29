@@ -1,0 +1,642 @@
+---
+title: "ExpoSpeechRecognitionModule complete methods reference"
+description: "Complete reference for all ExpoSpeechRecognitionModule methods including start, stop, abort, permissions, locale support, and iOS audio session APIs."
+---
+
+`ExpoSpeechRecognitionModule` is the primary native module for controlling speech recognition on Android and iOS. Import it from `expo-speech-recognition` to start and stop recognition sessions, query device capabilities, manage permissions, and configure iOS audio sessions.
+
+```typescript
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+```
+
+---
+
+## `start(options)`
+
+Starts a speech recognition session. All options are optional unless otherwise noted.
+
+```typescript
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  interimResults: true,
+  continuous: false,
+});
+```
+
+### Options
+
+<ParamField body="lang" type="string" default="en-US">
+  The BCP-47 language tag for speech recognition, e.g. `"en-US"`, `"de-DE"`, `"ja-JP"`. Call `getSupportedLocales()` to retrieve the list of locales available on the device.
+</ParamField>
+
+<ParamField body="interimResults" type="boolean" default="false">
+  When `true`, the `result` event fires with partial (`isFinal: false`) transcriptions as they become available. On iOS, only final results are returned after recognition stops, so interim results will always have `isFinal: false` until the session ends.
+</ParamField>
+
+<ParamField body="maxAlternatives" type="number" default="5">
+  The maximum number of alternative transcription hypotheses to include in each `result` event. Higher values give you more choices but add latency on some engines.
+</ParamField>
+
+<ParamField body="continuous" type="boolean" default="false">
+  When `true`, recognition continues until `stop()` or `abort()` is called instead of stopping automatically after the first final result.
+
+  Behavior when `false`:
+  - iOS 17 and below: stops after 3 seconds of silence.
+  - iOS 18+ and Android: stops after a result with `isFinal: true` is returned.
+
+  <Warning>Continuous mode is not supported on Android 12 and below (API level 32).</Warning>
+</ParamField>
+
+<ParamField body="requiresOnDeviceRecognition" type="boolean" default="false">
+  When `true`, prevents audio from being sent over the network by requiring on-device speech models. Recognition only starts if the device supports it. Call `supportsOnDeviceRecognition()` and `getSupportedLocales()` to check availability before enabling this option.
+</ParamField>
+
+<ParamField body="addsPunctuation" type="boolean" default="false">
+  When `true`, the recognizer adds punctuation (periods, commas) to the transcription automatically.
+
+  - **Android**: Requires Android 13+ (API level 33) and on-device recognition. Sets `EXTRA_ENABLE_FORMATTING` to `"quality"` on the recognizer intent.
+  - **iOS**: Configures `SFSpeechRecognitionRequest.addsPunctuation`.
+</ParamField>
+
+<ParamField body="contextualStrings" type="string[]">
+  An array of custom phrases to bias the recognizer towards. Useful for proper nouns, product names, or domain-specific vocabulary that the engine may not recognise reliably on its own.
+
+  - **Android**: Maps to `EXTRA_BIASING_STRINGS` (API level 33+).
+  - **iOS**: Maps to `SFSpeechRecognitionRequest.contextualStrings`.
+</ParamField>
+
+<ParamField body="androidRecognitionServicePackage" type="string">
+  The package name of the Android speech recognition service to use instead of the system default. Call `getSpeechRecognitionServices()` to list available packages on the device.
+
+  Common values: `"com.google.android.as"` (on-device), `"com.google.android.tts"`, `"com.samsung.android.bixby.agent"`.
+</ParamField>
+
+<ParamField body="androidIntentOptions" type="Partial<AndroidIntentOptions>">
+  A partial map of extra options forwarded directly to the Android `RecognizerIntent`. See the [Android RecognizerIntent docs](https://developer.android.com/reference/android/speech/RecognizerIntent) for the full list of supported keys.
+
+  <Expandable title="Common AndroidIntentOptions fields">
+    <ResponseField name="EXTRA_LANGUAGE_MODEL" type='"free_form" | "web_search"'>
+      The language model to prefer. Use `"web_search"` to improve accuracy on short words, letters, and numbers.
+    </ResponseField>
+    <ResponseField name="EXTRA_ENABLE_LANGUAGE_DETECTION" type="boolean">
+      Enables automatic language detection. Results appear in the `languagedetection` event. Android 14+ only with `com.google.android.as`.
+    </ResponseField>
+    <ResponseField name="EXTRA_ENABLE_LANGUAGE_SWITCH" type='"balanced" | "high_precision" | "quick_response"'>
+      Enables automatic language switching. Requires `EXTRA_ENABLE_LANGUAGE_DETECTION` and downloaded language models.
+    </ResponseField>
+    <ResponseField name="EXTRA_MASK_OFFENSIVE_WORDS" type="boolean">
+      Whether to mask offensive words in results. Default is `true` on Android 13+.
+    </ResponseField>
+    <ResponseField name="EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS" type="number">
+      Milliseconds of silence after which the recognizer considers input complete.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="audioSource" type="AudioSourceOptions">
+  Provide an audio file URI instead of using the microphone. Useful for transcribing pre-recorded audio. See `AudioSourceOptions` in the [types reference](/api/types).
+
+  <Expandable title="AudioSourceOptions fields">
+    <ResponseField name="uri" type="string" required>
+      Local file URI. e.g. `"file:///path/to/audio.wav"`.
+    </ResponseField>
+    <ResponseField name="audioChannels" type="number">
+      Android only. Number of channels in the source audio. Default: `1`.
+    </ResponseField>
+    <ResponseField name="audioEncoding" type="AudioEncodingAndroidValue">
+      Android only. Audio format constant from `AudioEncodingAndroid`. Default: `ENCODING_PCM_16BIT`.
+    </ResponseField>
+    <ResponseField name="sampleRate" type="number">
+      Android only. Sample rate in Hz. Default: `16000`.
+    </ResponseField>
+    <ResponseField name="chunkDelayMillis" type="number">
+      Android only. Delay between 4 KiB audio chunks streamed to the recognizer. Increase to avoid rate-limiting on network-based recognition. Default: `50` ms (network), `15` ms (on-device).
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="recordingOptions" type="RecordingOptions">
+  Options for persisting the captured audio to a local file. The file URI is provided in the `audiostart` and `audioend` events.
+
+  <Warning>Recording is only supported on Android 13+ and iOS. Call `supportsRecording()` before enabling this option.</Warning>
+
+  <Expandable title="RecordingOptions fields">
+    <ResponseField name="persist" type="boolean" required>
+      Set to `true` to write audio to a local file.
+    </ResponseField>
+    <ResponseField name="outputDirectory" type="string">
+      Directory to write the audio file. Defaults to `FileSystem.CacheDirectory`.
+    </ResponseField>
+    <ResponseField name="outputFileName" type="string">
+      File name for the audio file. Defaults to `recording_<timestamp>.[wav|caf]`.
+    </ResponseField>
+    <ResponseField name="outputSampleRate" type="number">
+      iOS only. Sample rate of the output file. Default: device-native rate (~44100 or 48000 Hz on iOS).
+    </ResponseField>
+    <ResponseField name="outputEncoding" type='"pcmFormatFloat32" | "pcmFormatFloat64" | "pcmFormatInt16" | "pcmFormatInt32"'>
+      iOS only. PCM encoding of the output file. Default: `pcmFormatFloat32`.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="androidIntent" type="string" default='"android.speech.action.RECOGNIZE_SPEECH"'>
+  The Android intent action to use for recognition.
+
+  | Value | Description |
+  |---|---|
+  | `android.speech.action.RECOGNIZE_SPEECH` | Standard speech recognition (default) |
+  | `android.speech.action.VOICE_SEARCH_HANDS_FREE` | Prompts the user for speech without requiring visual attention |
+  | `android.speech.action.WEB_SEARCH` | Web search-optimised recognition |
+</ParamField>
+
+<ParamField body="iosTaskHint" type="IOSTaskHintValue" default='"unspecified"'>
+  iOS only. A hint describing the speech recognition task to the recognizer, allowing it to tune its internal model.
+
+  | Value | Use case |
+  |---|---|
+  | `"unspecified"` | General-purpose recognition (default) |
+  | `"dictation"` | Keyboard-style dictation |
+  | `"search"` | Search query input |
+  | `"confirmation"` | Short confirmation commands (yes/no/maybe) |
+</ParamField>
+
+<ParamField body="iosCategory" type="SetCategoryOptions">
+  iOS only. Configures the `AVAudioSession` category, options, and mode before recognition starts. By default the module uses `playAndRecord` / `defaultToSpeaker` + `allowBluetooth` / `measurement`.
+
+  <Expandable title="SetCategoryOptions fields">
+    <ResponseField name="category" type="AVAudioSessionCategoryValue" required>
+      The audio session category, e.g. `"playAndRecord"`.
+    </ResponseField>
+    <ResponseField name="categoryOptions" type="AVAudioSessionCategoryOptionsValue[]" required>
+      Array of category option strings, e.g. `["defaultToSpeaker", "allowBluetooth"]`.
+    </ResponseField>
+    <ResponseField name="mode" type="AVAudioSessionModeValue">
+      The audio session mode, e.g. `"measurement"`. Defaults to `"default"` if not specified.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="volumeChangeEventOptions" type="object">
+  Settings for `volumechange` event emission. Disabled by default for performance.
+
+  <Expandable title="volumeChangeEventOptions fields">
+    <ResponseField name="enabled" type="boolean">
+      Whether to emit `volumechange` events. Default: `false`.
+    </ResponseField>
+    <ResponseField name="intervalMillis" type="number">
+      How frequently to emit `volumechange` events in milliseconds. Default: `100` ms on iOS. Increase this to reduce overhead.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="iosVoiceProcessingEnabled" type="boolean">
+  iOS only. When `true`, enables voice processing mode which removes audio feedback from speakers by applying extra signal processing on the microphone input.
+
+  <Note>Enabling this option may switch the `AVAudioSession` mode to `voiceChat` and lower speaker playback volume.</Note>
+</ParamField>
+
+---
+
+## `stop()`
+
+Stops audio capture and asks the recognizer to return a final result. This is a graceful stop.
+
+```typescript
+ExpoSpeechRecognitionModule.stop();
+```
+
+After calling `stop()`, expect the following event sequence:
+
+1. One of:
+   - `result` with `isFinal: true` if speech was recognised
+   - `nomatch` if recognition returned no significant result
+   - `error` with code `"no-speech"` if no speech was detected
+2. `audioend`
+3. `end`
+
+---
+
+## `abort()`
+
+Immediately cancels speech recognition without processing a final result.
+
+```typescript
+ExpoSpeechRecognitionModule.abort();
+```
+
+After calling `abort()`, expect the following event sequence:
+
+1. `error` with code `"aborted"`
+2. `end`
+
+---
+
+## `requestPermissionsAsync()`
+
+Presents the system permissions dialog to the user requesting access to the microphone and, on iOS, the speech recognizer.
+
+- **Android**: requests `RECORD_AUDIO`.
+- **iOS**: requests `AVAudioSession.RecordPermission` and `SFSpeechRecognizer.requestAuthorization()`.
+
+Returns `Promise<ExpoSpeechRecognitionPermissionResponse>`.
+
+<Note>Once a user grants or denies the dialog, subsequent calls will not re-show the dialog. The user must change permissions manually in the device Settings app.</Note>
+
+```typescript
+const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+
+console.log(result.status);      // "granted" | "denied" | "not-determined"
+console.log(result.granted);     // boolean
+console.log(result.restricted);  // boolean | undefined  (iOS only)
+console.log(result.canAskAgain); // boolean
+console.log(result.expires);     // "never" | number
+```
+
+---
+
+## `getPermissionsAsync()`
+
+Returns the current permission status for both microphone and iOS speech recognizer without showing a dialog.
+
+Returns `Promise<ExpoSpeechRecognitionPermissionResponse>`.
+
+```typescript
+const result = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+
+if (!result.granted) {
+  console.warn("Speech recognition permissions not granted");
+}
+```
+
+---
+
+## `requestMicrophonePermissionsAsync()`
+
+Requests microphone-only permissions. Use this when `requiresOnDeviceRecognition` is enabled, since on-device recognition does not need the speech recognizer permission on iOS.
+
+Returns `Promise<PermissionResponse>`.
+
+```typescript
+const result = await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+
+console.log(result.status);      // "granted" | "denied" | "not-determined"
+console.log(result.granted);     // boolean
+console.log(result.canAskAgain); // boolean
+```
+
+---
+
+## `getMicrophonePermissionsAsync()`
+
+Returns the current microphone permission status without showing a dialog.
+
+Returns `Promise<PermissionResponse>`.
+
+```typescript
+const result = await ExpoSpeechRecognitionModule.getMicrophonePermissionsAsync();
+console.log("Microphone permission:", result.status);
+```
+
+---
+
+## `requestSpeechRecognizerPermissionsAsync()`
+
+Requests permission to use network-based speech recognition via `SFSpeechRecognizer.requestAuthorization()`.
+
+<Info>This is an iOS-only method. On Android it has no effect. You only need this permission when `requiresOnDeviceRecognition` is `false`.</Info>
+
+Returns `Promise<ExpoSpeechRecognitionPermissionResponse>`.
+
+```typescript
+import { Platform } from "react-native";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+if (Platform.OS === "ios") {
+  const result =
+    await ExpoSpeechRecognitionModule.requestSpeechRecognizerPermissionsAsync();
+  console.log("Speech recognizer permission:", result.status);
+}
+```
+
+---
+
+## `getSpeechRecognizerPermissionsAsync()`
+
+Returns the current speech recognizer permission status on iOS without showing a dialog.
+
+<Info>iOS only.</Info>
+
+Returns `Promise<ExpoSpeechRecognitionPermissionResponse>`.
+
+```typescript
+const result =
+  await ExpoSpeechRecognitionModule.getSpeechRecognizerPermissionsAsync();
+console.log("Restricted:", result.restricted);
+```
+
+---
+
+## `getStateAsync()`
+
+Returns the current internal state of the speech recognizer.
+
+Returns `Promise<"inactive" | "starting" | "recognizing" | "stopping">`.
+
+<Note>Prefer listening to events (`start`, `end`) over polling this method for most use cases.</Note>
+
+```typescript
+const state = await ExpoSpeechRecognitionModule.getStateAsync();
+// "inactive" | "starting" | "recognizing" | "stopping"
+console.log("Recognizer state:", state);
+```
+
+---
+
+## `getSupportedLocales(options)`
+
+Returns all locales supported by the speech recognizer, along with which locales are installed on the device for offline use.
+
+<Warning>Not supported on Android 12 and below (API level 32). Returns empty arrays on those devices.</Warning>
+
+```typescript
+const { locales, installedLocales } =
+  await ExpoSpeechRecognitionModule.getSupportedLocales({
+    androidRecognitionServicePackage: "com.google.android.as",
+  });
+
+console.log("All supported locales:", locales.join(", "));
+console.log("Installed for on-device use:", installedLocales.join(", "));
+```
+
+### Options
+
+<ParamField body="androidRecognitionServicePackage" type="string">
+  The Android service package to query. If omitted, the default on-device service is used. Passing a non-`com.google.android.as` package will likely return an empty `installedLocales` array.
+</ParamField>
+
+### Return value
+
+<ResponseField name="locales" type="string[]">
+  All BCP-47 locale tags supported by the selected service (both network and on-device).
+</ResponseField>
+
+<ResponseField name="installedLocales" type="string[]">
+  BCP-47 locale tags installed locally for offline use. Typically only populated for `com.google.android.as`.
+</ResponseField>
+
+---
+
+## `getSpeechRecognitionServices()`
+
+Returns a list of package names for speech recognition services available on the device.
+
+<Info>Android only. Returns an empty array on iOS and Web.</Info>
+
+```typescript
+const services = ExpoSpeechRecognitionModule.getSpeechRecognitionServices();
+console.log("Available services:", services.join(", "));
+// e.g. ["com.google.android.as", "com.google.android.tts"]
+```
+
+<Note>Only services listed under `androidSpeechServicePackages` in `app.json` and services declared `forceQueryable` in the Android package manager are returned. Run `adb shell dumpsys package queries` to inspect the full list.</Note>
+
+---
+
+## `getDefaultRecognitionService()`
+
+Returns the default voice recognition service package name on Android.
+
+<Info>Android only. Returns `{ packageName: "" }` on other platforms.</Info>
+
+```typescript
+const service = ExpoSpeechRecognitionModule.getDefaultRecognitionService();
+console.log("Default service:", service.packageName);
+// e.g. "com.google.android.tts" (Android 13+)
+// or "com.google.android.googlequicksearchbox" (Android 12-)
+```
+
+### Return value
+
+<ResponseField name="packageName" type="string">
+  The Android package name of the default recognition service, e.g. `"com.google.android.tts"`. Returns an empty string if no service is found or on non-Android platforms.
+</ResponseField>
+
+---
+
+## `getAssistantService()`
+
+Returns the default voice assistant service package name on Android.
+
+<Info>Android only. Returns `{ packageName: "" }` on other platforms.</Info>
+
+```typescript
+const service = ExpoSpeechRecognitionModule.getAssistantService();
+console.log("Default assistant:", service.packageName);
+// e.g. "com.google.android.googlequicksearchbox" (Google)
+// or "com.samsung.android.bixby.agent" (Samsung)
+```
+
+### Return value
+
+<ResponseField name="packageName" type="string">
+  The Android package name of the default assistant service. Returns an empty string if no service is found or on non-Android platforms.
+</ResponseField>
+
+---
+
+## `isRecognitionAvailable()`
+
+Returns `true` if the device can perform speech recognition. If `false`, calling `start()` will emit an `error` event with code `"service-not-allowed"` or `"language-not-supported"`.
+
+```typescript
+const available = ExpoSpeechRecognitionModule.isRecognitionAvailable();
+
+if (!available) {
+  console.warn(
+    "Speech recognition unavailable. Ask the user to enable a recognition service in system settings.",
+  );
+}
+```
+
+---
+
+## `supportsOnDeviceRecognition()`
+
+Returns `true` if the device supports on-device (offline) speech recognition.
+
+```typescript
+const supported = ExpoSpeechRecognitionModule.supportsOnDeviceRecognition();
+console.log("On-device recognition supported:", supported);
+```
+
+---
+
+## `supportsRecording()`
+
+Returns `true` if the device supports persisting audio recordings during speech recognition. On Android this requires API level 33+ (Android 13).
+
+```typescript
+const supported = ExpoSpeechRecognitionModule.supportsRecording();
+
+if (supported) {
+  ExpoSpeechRecognitionModule.start({
+    lang: "en-US",
+    recordingOptions: { persist: true },
+  });
+}
+```
+
+---
+
+## `androidTriggerOfflineModelDownload(options)`
+
+Triggers the download of an offline speech model for a specific locale. Required before using `requiresOnDeviceRecognition` on Android.
+
+<Warning>Android 13+ only. On Android 12 and below this method is a no-op.</Warning>
+
+```typescript
+const result =
+  await ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload({
+    locale: "en-US",
+  });
+
+switch (result.status) {
+  case "opened_dialog":
+    // Android 13: the system download dialog was opened
+    break;
+  case "download_success":
+    // Android 14+: model downloaded successfully
+    break;
+  case "download_canceled":
+    // Android 14+: the user canceled the download
+    break;
+}
+```
+
+### Options
+
+<ParamField body="locale" type="string" required>
+  The BCP-47 locale tag of the model to download, e.g. `"en-US"`.
+</ParamField>
+
+### Return value
+
+<ResponseField name="status" type='"download_success" | "opened_dialog" | "download_canceled"'>
+  The outcome of the download request.
+
+  | Status | Platform | Description |
+  |---|---|---|
+  | `opened_dialog` | Android 13 | The system dialog for downloading the model was opened |
+  | `download_success` | Android 14+ | The model was downloaded successfully |
+  | `download_canceled` | Android 14+ | The user dismissed or canceled the download |
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  A human-readable description of the result.
+</ResponseField>
+
+---
+
+## `setCategoryIOS(options)`
+
+Sets the `AVAudioSession` category, category options, and mode. Use this for advanced audio routing in multimedia apps.
+
+<Info>iOS only. Has no effect on Android or Web.</Info>
+
+<Note>When `start()` is called, the module automatically sets the audio session to `playAndRecord` / `defaultToSpeaker` + `allowBluetooth` / `measurement`. Use the `iosCategory` option on `start()` if you want to configure this declaratively, or call `setCategoryIOS()` before or after a session for finer control.</Note>
+
+```typescript
+import {
+  ExpoSpeechRecognitionModule,
+  AVAudioSessionCategory,
+  AVAudioSessionCategoryOptions,
+  AVAudioSessionMode,
+} from "expo-speech-recognition";
+
+ExpoSpeechRecognitionModule.setCategoryIOS({
+  category: AVAudioSessionCategory.playAndRecord,
+  categoryOptions: [
+    AVAudioSessionCategoryOptions.defaultToSpeaker,
+    AVAudioSessionCategoryOptions.allowBluetooth,
+  ],
+  mode: AVAudioSessionMode.measurement,
+});
+```
+
+### Options
+
+<ParamField body="category" type="AVAudioSessionCategoryValue" required>
+  The audio session category. See `AVAudioSessionCategory` in the [types reference](/api/types) for all values.
+</ParamField>
+
+<ParamField body="categoryOptions" type="AVAudioSessionCategoryOptionsValue[]" required>
+  An array of category options to apply. See `AVAudioSessionCategoryOptions` in the [types reference](/api/types).
+</ParamField>
+
+<ParamField body="mode" type="AVAudioSessionModeValue">
+  The audio session mode. See `AVAudioSessionMode` in the [types reference](/api/types). Defaults to `"default"` if not provided.
+</ParamField>
+
+---
+
+## `getAudioSessionCategoryAndOptionsIOS()`
+
+Returns the current `AVAudioSession` category, options, and mode. Call this before starting speech recognition if you need to restore the audio session afterwards.
+
+<Info>iOS only.</Info>
+
+```typescript
+const session =
+  ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
+
+console.log(session);
+// {
+//   category: "playAndRecord",
+//   categoryOptions: ["defaultToSpeaker", "allowBluetooth"],
+//   mode: "measurement"
+// }
+```
+
+### Return value
+
+<ResponseField name="category" type="AVAudioSessionCategoryValue">
+  The current audio session category string.
+</ResponseField>
+
+<ResponseField name="categoryOptions" type="AVAudioSessionCategoryOptionsValue[]">
+  The active array of category option strings.
+</ResponseField>
+
+<ResponseField name="mode" type="AVAudioSessionModeValue">
+  The current audio session mode string.
+</ResponseField>
+
+---
+
+## `setAudioSessionActiveIOS(value, options?)`
+
+Activates or deactivates the shared `AVAudioSession`.
+
+<Info>iOS only. Calls `AVAudioSession.sharedInstance().setActive(value, options)`.</Info>
+
+```typescript
+// Activate before starting recognition alongside other audio
+ExpoSpeechRecognitionModule.setAudioSessionActiveIOS(true, {
+  notifyOthersOnDeactivation: true,
+});
+
+// Deactivate when done to restore other audio sessions
+ExpoSpeechRecognitionModule.setAudioSessionActiveIOS(false, {
+  notifyOthersOnDeactivation: true,
+});
+```
+
+### Parameters
+
+<ParamField path="value" type="boolean" required>
+  `true` to activate the audio session, `false` to deactivate it.
+</ParamField>
+
+<ParamField body="options.notifyOthersOnDeactivation" type="boolean" default="true">
+  When `true`, other audio sessions are notified when this session deactivates, allowing them to resume playback.
+</ParamField>

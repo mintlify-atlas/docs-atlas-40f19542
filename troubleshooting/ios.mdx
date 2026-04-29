@@ -1,0 +1,189 @@
+---
+title: "Troubleshooting iOS speech recognition problems and errors"
+description: "Resolve iOS audio session conflicts, permission denied errors, Siri configuration, and crashes when using expo-speech-recognition with audio/video apps."
+---
+
+iOS speech recognition issues most often involve audio session conflicts with other media playback, permission restrictions enforced by Screen Time or MDM profiles, or unexpected session endings when the device receives an interruption. The sections below cover each scenario with concrete steps to diagnose and resolve it.
+
+<AccordionGroup>
+
+<Accordion title="Audio session issues or crashes with multimedia apps">
+
+This library modifies the `AVAudioSession` category and mode when recognition starts — by default it sets the category to `playAndRecord` with the `defaultToSpeaker` and `allowBluetooth` options and the mode to `measurement`. If your app also plays audio or video, this change can interrupt playback, cause audio routing to change unexpectedly, or crash.
+
+The recommended pattern is to save the current audio session settings before starting recognition and restore them when recognition ends:
+
+```tsx
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+async function startRecognition() {
+  // 1. Save the current audio session settings
+  const previousSession =
+    ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
+
+  // 2. Start recognition, configuring the session as needed for your app
+  ExpoSpeechRecognitionModule.start({
+    lang: "en-US",
+    iosCategory: {
+      category: "playAndRecord",
+      categoryOptions: ["defaultToSpeaker", "allowBluetooth"],
+      mode: "measurement",
+    },
+  });
+
+  return previousSession;
+}
+
+function SpeechComponent() {
+  useSpeechRecognitionEvent("end", () => {
+    // 3. Restore the previous audio session after recognition ends
+    ExpoSpeechRecognitionModule.setCategoryIOS({
+      category: "playback",
+      categoryOptions: ["mixWithOthers"],
+      mode: "default",
+    });
+  });
+}
+```
+
+<Tip>
+  Call `getAudioSessionCategoryAndOptionsIOS()` before starting recognition so you can restore the exact settings your media player was using, rather than hard-coding a category.
+</Tip>
+
+</Accordion>
+
+<Accordion title="Permissions denied even though the app is allowed in Settings">
+
+If `requestPermissionsAsync()` returns a `denied` or `restricted` status even though the app appears to have both Microphone and Speech Recognition permissions granted under **Settings → Apps → [your app]**, the restriction is likely coming from a higher-level policy rather than the per-app setting.
+
+**Content & Privacy Restrictions (Screen Time)**
+
+A Screen Time restriction on Speech Recognition will block the permission regardless of per-app settings. To check:
+
+1. Open **Settings → Screen Time → Content & Privacy Restrictions → Speech Recognition**.
+2. Your app should be in the allowed list. If Speech Recognition is restricted entirely, add or re-enable the app.
+
+**Mobile Device Management (MDM) profile**
+
+On managed devices (corporate or school-owned), an MDM profile may mark speech recognition as `restricted`. You can detect this with `getPermissionsAsync()`:
+
+```tsx
+const result = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+console.log("Restricted:", result.restricted);
+```
+
+If `restricted` is `true`, the user cannot change the permission themselves. Ask the MDM administrator to update the [Privacy Preferences Policy Control payload](https://support.apple.com/en-us/guide/deployment/dep38df53c2a/web) to allow speech recognition for your app. To check whether an MDM profile is installed: **Settings → General → VPN & Device Management**.
+
+**Quick workaround for both cases**
+
+Enable on-device recognition and request only the microphone permission. On-device recognition does not require the Speech Recognition permission:
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result =
+  await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+
+if (result.granted) {
+  ExpoSpeechRecognitionModule.start({
+    lang: "en-US",
+    requiresOnDeviceRecognition: true,
+  });
+}
+```
+
+<Note>
+  After changing restrictions in Settings, a device reboot may be required before the updated permissions take effect.
+</Note>
+
+</Accordion>
+
+<Accordion title="Speaker audio picked up by the microphone (feedback)">
+
+If the device's speakers are playing audio while recognition is active, that audio can be picked up by the microphone and misinterpreted as speech. Enable `iosVoiceProcessingEnabled` to apply signal processing that removes speaker output from the microphone input:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  iosVoiceProcessingEnabled: true,
+});
+```
+
+<Warning>
+  Enabling `iosVoiceProcessingEnabled` may switch the `AVAudioSession` mode to `voiceChat`, which can lower speaker playback volume. Test this in your app before shipping to make sure it does not adversely affect your audio experience.
+</Warning>
+
+</Accordion>
+
+<Accordion title="Recognition stops after 3 seconds without speech">
+
+The behavior differs by iOS version:
+
+- **iOS 17 and below (non-continuous mode):** recognition stops automatically after approximately 3 seconds of silence with no detected speech.
+- **iOS 18 and above (non-continuous mode):** recognition stops after a final result is returned.
+
+If you need a longer session — for example, to wait for the user to begin speaking — enable continuous mode:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  continuous: true,
+});
+```
+
+<Note>
+  In continuous mode on iOS, you receive one or more `result` events followed by an eventual `end` event. Unlike Android, iOS does not segment results; expect one final result per utterance before the session closes naturally.
+</Note>
+
+</Accordion>
+
+<Accordion title="Audio interruptions (phone calls, Siri, alarms)">
+
+When an audio interruption occurs — such as an incoming phone call, Siri activation, or an alarm — iOS suspends the audio session. The library detects this and emits an `error` event followed by an `end` event.
+
+```tsx
+import { useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("error", (event) => {
+  if (event.error === "interrupted") {
+    // event.message: "Audio session was interrupted"
+    console.log("Recognition interrupted:", event.message);
+  }
+});
+
+useSpeechRecognitionEvent("end", () => {
+  // Recognition has fully stopped after the interruption
+  console.log("Session ended after interruption");
+});
+```
+
+If you want to resume recognition automatically after the interruption ends, restart it from the `end` event handler — but only if the interruption has cleared and the user has not explicitly stopped recognition themselves.
+
+</Accordion>
+
+<Accordion title="Audio route changes (Bluetooth headset)">
+
+When the audio route changes — for example, when a Bluetooth headset connects or disconnects — the library attempts to switch the active microphone automatically. If the switch fails, it emits an `error` event and stops recognition.
+
+```tsx
+import { useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("error", (event) => {
+  if (event.error === "audio-capture") {
+    // event.message: "Audio route changed and failed to restart the audio engine"
+    console.log("Audio route change caused recognition failure:", event.message);
+    // Restart recognition if appropriate for your use case
+  }
+});
+```
+
+<Tip>
+  If users frequently switch between audio routes during sessions, consider restarting recognition in the `end` event handler rather than the `error` handler to avoid double-restart attempts.
+</Tip>
+
+</Accordion>
+
+</AccordionGroup>

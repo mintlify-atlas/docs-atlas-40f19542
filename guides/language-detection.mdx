@@ -1,0 +1,92 @@
+---
+title: "Automatic language detection for speech recognition"
+description: "Use EXTRA_ENABLE_LANGUAGE_DETECTION on Android 14+ with the com.google.android.as service to detect spoken language automatically."
+---
+
+Language detection allows the speech recognition engine to identify which language the speaker is using and report it back to your app in real time. This is useful for multilingual applications where the user's language is not known ahead of time. The feature is currently limited to a specific platform and service package as described below.
+
+<Warning>
+  Language detection is only available on **Android 14+** using the `com.google.android.as` service package (Android System Intelligence). It is not supported on Android 13 or below, or on iOS.
+</Warning>
+
+## Requirements
+
+<Steps>
+  <Step title="Android 14+ device">
+    The `EXTRA_ENABLE_LANGUAGE_DETECTION` intent option requires API level 34 or higher. On older devices the option is silently ignored.
+  </Step>
+  <Step title="Use the com.google.android.as service">
+    Language detection is only implemented by the Android System Intelligence service. Set `androidRecognitionServicePackage: "com.google.android.as"` in your `start()` call, or enable `requiresOnDeviceRecognition: true` which selects the same service automatically.
+  </Step>
+  <Step title="Enable EXTRA_ENABLE_LANGUAGE_DETECTION">
+    Pass `EXTRA_ENABLE_LANGUAGE_DETECTION: true` in the `androidIntentOptions` object when calling `start()`.
+  </Step>
+  <Step title="(Optional) Enable automatic language switching">
+    Pass `EXTRA_ENABLE_LANGUAGE_SWITCH` to allow the recognizer to automatically switch to the detected language mid-session. The language model for the target language must already be downloaded on the device. See [On-device recognition](/guides/on-device-recognition) for instructions.
+  </Step>
+</Steps>
+
+## The `languagedetection` event
+
+When language detection is enabled, the `languagedetection` event fires whenever the recognizer has a new detection result. It may fire multiple times during a session.
+
+<ParamField path="detectedLanguage" type="string">
+  The detected language tag in BCP-47 format. For example: `"en-us"`, `"de-de"`, `"fr-fr"`.
+</ParamField>
+
+<ParamField path="confidence" type="number">
+  A value between `0.0` and `1.0` indicating detection confidence. Values map roughly to: `1.0` (highly confident), `0.8` (confident), `0.5` (not confident), `0.0` (unknown).
+</ParamField>
+
+<ParamField path="topLocaleAlternatives" type="string[]">
+  Alternative locale tags for the same language in BCP-47 format. For example, if `detectedLanguage` is `"en-us"`, alternatives might include `["en-au", "en-gb"]`.
+</ParamField>
+
+## Complete example
+
+```tsx
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+function LanguageDetectionExample() {
+  useSpeechRecognitionEvent("languagedetection", (event) => {
+    console.log("Detected language:", event.detectedLanguage); // e.g. "en-us"
+    console.log("Confidence:", event.confidence);              // e.g. 0.8
+    console.log("Alternatives:", event.topLocaleAlternatives); // e.g. ["en-au", "en-gb"]
+  });
+
+  const handleStart = () => {
+    ExpoSpeechRecognitionModule.start({
+      // Use the Android System Intelligence service for language detection
+      androidRecognitionServicePackage: "com.google.android.as",
+      // Or equivalently:
+      // requiresOnDeviceRecognition: true,
+      androidIntentOptions: {
+        // Required: enable language detection
+        EXTRA_ENABLE_LANGUAGE_DETECTION: true,
+        // Optional: automatically switch recognition language when detected
+        // Requires the target language model to be downloaded
+        EXTRA_ENABLE_LANGUAGE_SWITCH: "balanced",
+      },
+    });
+  };
+
+  // ...
+}
+```
+
+## Language switching sensitivity
+
+When `EXTRA_ENABLE_LANGUAGE_SWITCH` is enabled, you can control how eagerly the recognizer switches languages:
+
+| Value | Constant | Behavior |
+|-------|----------|----------|
+| `"quick_response"` | `LANGUAGE_SWITCH_QUICK_RESPONSE` | Switch as soon as any language is detected (least confident threshold) |
+| `"balanced"` | `LANGUAGE_SWITCH_BALANCED` | Switch when the new language is detected with at least "confident" level |
+| `"high_precision"` | `LANGUAGE_SWITCH_HIGH_PRECISION` | Switch only when the new language is "highly confident" |
+
+<Tip>
+  Before enabling `EXTRA_ENABLE_LANGUAGE_SWITCH`, download the language models for the languages you expect users to speak. Use `androidTriggerOfflineModelDownload()` to download a model and `getSupportedLocales()` to check which models are installed. See [On-device recognition](/guides/on-device-recognition) for a full walkthrough.
+</Tip>

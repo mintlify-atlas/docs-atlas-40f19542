@@ -1,0 +1,460 @@
+---
+title: "TypeScript type reference for expo-speech-recognition"
+description: "Complete TypeScript type reference for ExpoSpeechRecognitionOptions, event types, permission responses, recording options, and audio source configuration."
+---
+
+`expo-speech-recognition` ships full TypeScript definitions. All types are exported from the package root and can be imported directly alongside the module and hooks.
+
+```typescript
+import type {
+  ExpoSpeechRecognitionOptions,
+  ExpoSpeechRecognitionResult,
+  ExpoSpeechRecognitionErrorCode,
+  ExpoSpeechRecognitionErrorEvent,
+  RecordingOptions,
+  AudioSourceOptions,
+  SetCategoryOptions,
+} from "expo-speech-recognition";
+```
+
+---
+
+## `ExpoSpeechRecognitionOptions`
+
+The options object passed to `ExpoSpeechRecognitionModule.start()`. All fields are optional.
+
+<ParamField body="lang" type="string" default="en-US">
+  BCP-47 language tag for recognition, e.g. `"en-US"`, `"ja-JP"`.
+</ParamField>
+
+<ParamField body="interimResults" type="boolean" default="false">
+  Whether to emit partial (`isFinal: false`) results via the `result` event as recognition progresses.
+</ParamField>
+
+<ParamField body="maxAlternatives" type="number" default="5">
+  Maximum number of alternative transcription hypotheses per result.
+</ParamField>
+
+<ParamField body="continuous" type="boolean" default="false">
+  Keep the session running after the first final result. Not supported on Android 12-.
+</ParamField>
+
+<ParamField body="requiresOnDeviceRecognition" type="boolean" default="false">
+  Force on-device recognition; audio is not sent to a server.
+</ParamField>
+
+<ParamField body="addsPunctuation" type="boolean" default="false">
+  Automatically add punctuation. Android 13+ with on-device recognition; all iOS versions.
+</ParamField>
+
+<ParamField body="contextualStrings" type="string[]">
+  Custom phrases to bias the recognizer towards.
+</ParamField>
+
+<ParamField body="androidRecognitionServicePackage" type="string">
+  Override the Android recognition service package, e.g. `"com.google.android.as"`.
+</ParamField>
+
+<ParamField body="androidIntentOptions" type="Partial<AndroidIntentOptions>">
+  Extra options forwarded to the Android `RecognizerIntent`.
+</ParamField>
+
+<ParamField body="audioSource" type="AudioSourceOptions">
+  Use a local audio file as input instead of the microphone.
+</ParamField>
+
+<ParamField body="recordingOptions" type="RecordingOptions">
+  Persist the captured audio to a local file.
+</ParamField>
+
+<ParamField body="androidIntent" type='"android.speech.action.RECOGNIZE_SPEECH" | "android.speech.action.VOICE_SEARCH_HANDS_FREE" | "android.speech.action.WEB_SEARCH"' default='"android.speech.action.RECOGNIZE_SPEECH"'>
+  Android intent action type for the recognition request.
+</ParamField>
+
+<ParamField body="iosTaskHint" type="IOSTaskHintValue" default='"unspecified"'>
+  iOS hint describing the recognition task: `"unspecified"`, `"dictation"`, `"search"`, or `"confirmation"`.
+</ParamField>
+
+<ParamField body="iosCategory" type="SetCategoryOptions">
+  iOS audio session category, options, and mode to configure before starting.
+</ParamField>
+
+<ParamField body="volumeChangeEventOptions" type="object">
+  Configure the `volumechange` event emission.
+
+  <Expandable title="fields">
+    <ResponseField name="enabled" type="boolean">
+      Whether to emit `volumechange` events. Default: `false`.
+    </ResponseField>
+    <ResponseField name="intervalMillis" type="number">
+      Interval in milliseconds between events. Default: `100` ms on iOS.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="iosVoiceProcessingEnabled" type="boolean">
+  iOS only. Enable voice processing to suppress speaker feedback in the microphone signal.
+</ParamField>
+
+---
+
+## `ExpoSpeechRecognitionResultEvent`
+
+The complete event data shape emitted by the `result` event.
+
+<ResponseField name="isFinal" type="boolean">
+  `true` when this is the final transcription result for the current segment. `false` for partial, in-progress results (only emitted when `interimResults: true`).
+</ResponseField>
+
+<ResponseField name="results" type="ExpoSpeechRecognitionResult[]">
+  An ordered array of transcription alternatives, up to `maxAlternatives` entries.
+</ResponseField>
+
+---
+
+## `ExpoSpeechRecognitionResult`
+
+A single transcription hypothesis contained in the `results` array of a `result` event.
+
+<ResponseField name="transcript" type="string">
+  The recognised text string.
+</ResponseField>
+
+<ResponseField name="confidence" type="number">
+  Confidence score. Range: `0.0` to `1.0`. Returns `-1` when unavailable. On iOS, partial results always return `0`.
+</ResponseField>
+
+<ResponseField name="segments" type="ExpoSpeechRecognitionResultSegment[]">
+  Word-level segments with timestamps and per-word confidence.
+
+  **Android notes:**
+  - Requires SDK 34+ (Android 14)
+  - Only available with `com.google.android.as` (on-device)
+  - Only present on final results and only for the first transcript
+  - Segment confidences always return `-1` (unavailable)
+
+  **iOS notes:**
+  - Confidence is `0` on partial results
+</ResponseField>
+
+---
+
+## `ExpoSpeechRecognitionResultSegment`
+
+A word-level portion of a transcript, as identified by the recognizer.
+
+<ResponseField name="startTimeMillis" type="number">
+  The start timestamp of this word or phrase within the audio, in milliseconds. e.g. `1000`.
+</ResponseField>
+
+<ResponseField name="endTimeMillis" type="number">
+  The end timestamp of this word or phrase within the audio, in milliseconds. e.g. `1500`.
+</ResponseField>
+
+<ResponseField name="segment" type="string">
+  The text content of this segment, e.g. `"Hello world"`.
+</ResponseField>
+
+<ResponseField name="confidence" type="number">
+  Per-segment confidence between `0.0` and `1.0`. Returns `-1` when unavailable.
+</ResponseField>
+
+---
+
+## `ExpoSpeechRecognitionErrorEvent`
+
+The event data shape emitted by the `error` event.
+
+<ResponseField name="error" type="ExpoSpeechRecognitionErrorCode">
+  The error code string. See the full list below.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  A human-readable description of the error.
+</ResponseField>
+
+<ResponseField name="code" type="number">
+  Optional. The underlying native error code from the platform.
+
+  - **Android**: maps to `SpeechRecognizer` error constants (e.g. `ERROR_AUDIO = 3`).
+  - Value `-1` indicates a generic or unknown error.
+</ResponseField>
+
+---
+
+## `ExpoSpeechRecognitionErrorCode`
+
+A union type of all possible error code strings emitted by the `error` event.
+
+```typescript
+type ExpoSpeechRecognitionErrorCode =
+  | "aborted"
+  | "audio-capture"
+  | "interrupted"
+  | "bad-grammar"
+  | "language-not-supported"
+  | "network"
+  | "no-speech"
+  | "not-allowed"
+  | "service-not-allowed"
+  | "busy"
+  | "client"
+  | "speech-timeout"
+  | "unknown";
+```
+
+| Code | Description |
+|---|---|
+| `aborted` | `abort()` was called |
+| `audio-capture` | Audio recording hardware error |
+| `interrupted` | iOS: audio session interrupted by a phone call, Siri, or alarm |
+| `bad-grammar` | Invalid grammar (Web only) |
+| `language-not-supported` | Requested locale not supported by the recognizer |
+| `network` | Network failure during recognition |
+| `no-speech` | No speech detected before session timeout |
+| `not-allowed` | Microphone or speech recognizer permission denied |
+| `service-not-allowed` | Speech recognizer unavailable on the device |
+| `busy` | Recognizer busy with another request |
+| `client` | Android only: unknown client-side error |
+| `speech-timeout` | Android only: no speech input received |
+| `unknown` | Android only: unclassified error |
+
+---
+
+## `RecordingOptions`
+
+Controls audio recording persistence when passed as `recordingOptions` to `start()`.
+
+<ResponseField name="persist" type="boolean" required>
+  Set to `true` to write the captured audio to a local file.
+</ResponseField>
+
+<ResponseField name="outputDirectory" type="string">
+  Directory to write the audio file. Defaults to `FileSystem.CacheDirectory`. Pass a path from `expo-file-system`, e.g. `Paths.document.uri`.
+</ResponseField>
+
+<ResponseField name="outputFileName" type="string">
+  File name for the audio recording. Defaults to `recording_<timestamp|uuid>.[wav|caf]`. You can retrieve the resolved path from `event.uri` in the `audiostart` and `audioend` events.
+</ResponseField>
+
+<ResponseField name="outputSampleRate" type="number">
+  iOS only. Sample rate of the output file in Hz. Default sample rates are `16000` Hz on Android and `44100`/`48000` Hz on iOS.
+</ResponseField>
+
+<ResponseField name="outputEncoding" type='"pcmFormatFloat32" | "pcmFormatFloat64" | "pcmFormatInt16" | "pcmFormatInt32"'>
+  iOS only. PCM encoding format for the output file. Defaults to `pcmFormatFloat32` on iOS.
+</ResponseField>
+
+---
+
+## `AudioSourceOptions`
+
+Configures a pre-recorded audio file as the input source instead of the microphone. Pass as `audioSource` to `start()`.
+
+<ResponseField name="uri" type="string" required>
+  Local file URI of the audio to transcribe, e.g. `"file:///storage/emulated/0/Download/audio.wav"`.
+</ResponseField>
+
+<ResponseField name="audioChannels" type="number">
+  Android only. Number of channels in the source audio. Default: `1`.
+</ResponseField>
+
+<ResponseField name="audioEncoding" type="AudioEncodingAndroidValue">
+  Android only. Audio format constant from the `AudioEncodingAndroid` enum (maps to Android `AudioFormat` constants). Default: `ENCODING_PCM_16BIT`.
+</ResponseField>
+
+<ResponseField name="sampleRate" type="number">
+  Android only. Sample rate of the audio file in Hz. Default: `16000`.
+</ResponseField>
+
+<ResponseField name="chunkDelayMillis" type="number">
+  Android only. Delay in milliseconds between 4 KiB audio chunks streamed to the recognizer. Increase to avoid rate-limiting on network-based recognition. Defaults: `50` ms for network, `15` ms for on-device recognition.
+</ResponseField>
+
+---
+
+## `SetCategoryOptions`
+
+Passed to `setCategoryIOS()` or as `iosCategory` in `start()` to configure the `AVAudioSession`.
+
+<ResponseField name="category" type="AVAudioSessionCategoryValue" required>
+  The audio session category string. See `AVAudioSessionCategory` below.
+</ResponseField>
+
+<ResponseField name="categoryOptions" type="AVAudioSessionCategoryOptionsValue[]" required>
+  Array of category option strings. See `AVAudioSessionCategoryOptions` below.
+</ResponseField>
+
+<ResponseField name="mode" type="AVAudioSessionModeValue">
+  The audio session mode string. See `AVAudioSessionMode` below. Defaults to `"default"` if omitted.
+</ResponseField>
+
+---
+
+## `LanguageDetectionEvent`
+
+The event data shape emitted by the `languagedetection` event. Android 14+ only with `com.google.android.as`.
+
+<ResponseField name="detectedLanguage" type="string">
+  BCP-47 tag of the detected language, e.g. `"en-US"`, `"de-DE"`.
+</ResponseField>
+
+<ResponseField name="confidence" type="number">
+  Detection confidence: `1.0` (highly confident), `0.8` (confident), `0.5` (not confident), `0.0` (unknown).
+</ResponseField>
+
+<ResponseField name="topLocaleAlternatives" type="string[]">
+  Alternative BCP-47 locale tags for the same language, e.g. `["en-US", "en-GB"]`.
+</ResponseField>
+
+---
+
+## Enums and constants
+
+All enums are exported as plain JavaScript objects with `as const`. Use them to get correctly typed values.
+
+### `AVAudioSessionCategory`
+
+iOS audio session categories. See [Apple docs](https://developer.apple.com/documentation/avfaudio/avaudiosession/category).
+
+```typescript
+import { AVAudioSessionCategory } from "expo-speech-recognition";
+
+const AVAudioSessionCategory = {
+  ambient: "ambient",          // Nonprimary playback; mixes with others; silenced by Silent switch
+  soloAmbient: "soloAmbient",  // Default category; silenced by Silent switch; non-mixable
+  playback: "playback",        // Central audio playback; continues with Silent switch
+  record: "record",            // Recording only; silences all system output
+  playAndRecord: "playAndRecord", // Simultaneous recording and playback (default for speech recognition)
+  multiRoute: "multiRoute",    // Route audio to multiple outputs simultaneously
+} as const;
+```
+
+### `AVAudioSessionCategoryOptions`
+
+Optional audio behaviors applied to the active category. See [Apple docs](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions).
+
+```typescript
+import { AVAudioSessionCategoryOptions } from "expo-speech-recognition";
+
+const AVAudioSessionCategoryOptions = {
+  mixWithOthers: "mixWithOthers",
+  duckOthers: "duckOthers",
+  interruptSpokenAudioAndMixWithOthers: "interruptSpokenAudioAndMixWithOthers",
+  allowBluetooth: "allowBluetooth",
+  allowBluetoothA2DP: "allowBluetoothA2DP",
+  allowAirPlay: "allowAirPlay",
+  defaultToSpeaker: "defaultToSpeaker",
+  overrideMutedMicrophoneInterruption: "overrideMutedMicrophoneInterruption",
+} as const;
+```
+
+### `AVAudioSessionMode`
+
+Audio session modes that refine the behaviour of a category. See [Apple docs](https://developer.apple.com/documentation/avfaudio/avaudiosession/mode).
+
+```typescript
+import { AVAudioSessionMode } from "expo-speech-recognition";
+
+const AVAudioSessionMode = {
+  default: "default",            // General-purpose mode
+  gameChat: "gameChat",          // GameKit voice chat (set by the framework)
+  measurement: "measurement",    // Minimal signal processing; used during speech recognition
+  moviePlayback: "moviePlayback",// Enhanced playback for movie content
+  spokenAudio: "spokenAudio",    // Continuous spoken audio (e.g. podcasts)
+  videoChat: "videoChat",        // Video conferencing
+  videoRecording: "videoRecording", // Camera recording
+  voiceChat: "voiceChat",        // VoIP two-way voice communication
+  voicePrompt: "voicePrompt",    // TTS prompts (e.g. navigation)
+} as const;
+```
+
+### `RecognizerIntentExtraLanguageModel`
+
+Values for the `EXTRA_LANGUAGE_MODEL` key in `androidIntentOptions`. See [Android docs](https://developer.android.com/reference/android/speech/RecognizerIntent#EXTRA_LANGUAGE_MODEL).
+
+```typescript
+import { RecognizerIntentExtraLanguageModel } from "expo-speech-recognition";
+
+const RecognizerIntentExtraLanguageModel = {
+  LANGUAGE_MODEL_FREE_FORM: "free_form",   // General free-form speech (default)
+  LANGUAGE_MODEL_WEB_SEARCH: "web_search", // Web search terms; better for short words
+} as const;
+```
+
+### `RecognizerIntentEnableLanguageSwitch`
+
+Values for the `EXTRA_ENABLE_LANGUAGE_SWITCH` key in `androidIntentOptions`. Controls how eagerly the recognizer switches languages mid-session when language detection is enabled. See [Language detection guide](/guides/language-detection).
+
+```typescript
+import { RecognizerIntentEnableLanguageSwitch } from "expo-speech-recognition";
+
+const RecognizerIntentEnableLanguageSwitch = {
+  LANGUAGE_SWITCH_BALANCED: "balanced",           // Switch when confident (recommended)
+  LANGUAGE_SWITCH_HIGH_PRECISION: "high_precision", // Switch only when highly confident
+  LANGUAGE_SWITCH_QUICK_RESPONSE: "quick_response", // Switch at earliest opportunity
+} as const;
+```
+
+### `AudioEncodingAndroid`
+
+Audio format constants for use with `AudioSourceOptions.audioEncoding`. Maps directly to Android `AudioFormat` constants.
+
+```typescript
+import { AudioEncodingAndroid } from "expo-speech-recognition";
+
+const AudioEncodingAndroid = {
+  ENCODING_PCM_16BIT: 2,          // 16-bit PCM; guaranteed on all devices
+  ENCODING_PCM_8BIT: 3,           // 8-bit PCM
+  ENCODING_PCM_FLOAT: 4,          // 32-bit float PCM
+  ENCODING_MP3: 9,                 // MP3
+  ENCODING_OPUS: 20,               // Opus
+  ENCODING_PCM_24BIT_PACKED: 21,  // 24-bit PCM (little-endian)
+  ENCODING_PCM_32BIT: 22,         // 32-bit PCM
+  ENCODING_MPEGH_BL_L3: 23,       // MPEG-H baseline level 3
+  ENCODING_MPEGH_BL_L4: 24,       // MPEG-H baseline level 4
+  ENCODING_MPEGH_LC_L3: 25,       // MPEG-H low complexity level 3
+  ENCODING_MPEGH_LC_L4: 26,       // MPEG-H low complexity level 4
+} as const;
+```
+
+### `TaskHintIOS`
+
+Hint values for the `iosTaskHint` option. See [Apple docs](https://developer.apple.com/documentation/speech/sfspeechrecognitiontaskhint).
+
+```typescript
+import { TaskHintIOS } from "expo-speech-recognition";
+
+const TaskHintIOS = {
+  unspecified: "unspecified",    // General purpose (default)
+  dictation: "dictation",        // Keyboard-style text entry
+  search: "search",              // Search query input
+  confirmation: "confirmation",  // Short yes/no/maybe confirmations
+} as const;
+```
+
+### `SpeechRecognizerErrorAndroid`
+
+Native Android `SpeechRecognizer` error codes. Use these with `event.code` in the `error` event handler for detailed Android error handling. See [Android docs](https://developer.android.com/reference/android/speech/SpeechRecognizer).
+
+```typescript
+import { SpeechRecognizerErrorAndroid } from "expo-speech-recognition";
+
+const SpeechRecognizerErrorAndroid = {
+  ERROR_NETWORK_TIMEOUT: 1,             // Network operation timed out
+  ERROR_NETWORK: 2,                     // Other network error
+  ERROR_AUDIO: 3,                       // Audio recording error
+  ERROR_SERVER: 4,                      // Server error
+  ERROR_CLIENT: 5,                      // Client-side error
+  ERROR_SPEECH_TIMEOUT: 6,              // No speech input
+  ERROR_NO_MATCH: 7,                    // No recognition result
+  ERROR_RECOGNIZER_BUSY: 8,             // Recognizer busy
+  ERROR_INSUFFICIENT_PERMISSIONS: 9,   // Insufficient permissions
+  ERROR_TOO_MANY_REQUESTS: 10,          // (API 31+) Too many requests
+  ERROR_SERVER_DISCONNECTED: 11,        // Server disconnected
+  ERROR_LANGUAGE_NOT_SUPPORTED: 12,    // Language not available
+  ERROR_LANGUAGE_UNAVAILABLE: 13,      // (API 31+) Language not downloaded
+  ERROR_CANNOT_CHECK_SUPPORT: 14,      // (API 33+) Cannot check support
+  ERROR_CANNOT_LISTEN_TO_DOWNLOAD_EVENTS: 15, // (API 33+) Cannot listen to download events
+} as const;
+```

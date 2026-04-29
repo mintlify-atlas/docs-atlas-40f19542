@@ -1,0 +1,48 @@
+---
+title: "expo-speech-recognition: Cross-platform speech for Expo"
+description: "expo-speech-recognition brings the Web Speech API to React Native, bridging iOS SFSpeechRecognizer, Android SpeechRecognizer, and the web in one library."
+---
+
+expo-speech-recognition is a React Native library that implements speech recognition across iOS, Android, and the web from a single, unified API. It bridges iOS [`SFSpeechRecognizer`](https://developer.apple.com/documentation/speech/sfspeechrecognizer), Android [`SpeechRecognizer`](https://developer.android.com/reference/android/speech/SpeechRecognizer), and the browser's native [`SpeechRecognition`](https://wicg.github.io/speech-api/) interface so you can write recognition logic once and run it everywhere your Expo app targets.
+
+## Key features
+
+- **Web Speech API compatibility** — event names, error codes, and the recognition lifecycle all mirror the browser's `SpeechRecognition` spec, so knowledge transfers directly.
+- **Interim (partial) results** — receive transcription updates in real time as the user speaks, not only after they stop.
+- **Continuous recognition** — keep the session open across multiple utterances (Android 13+ and iOS).
+- **On-device recognition** — opt in to offline recognition to keep audio on the device and avoid network round-trips (Android 13+ and iOS).
+- **Audio file transcription** — transcribe a local `.wav` or `.mp3` file instead of live microphone input (Android 13+ and iOS).
+- **Audio recording** — persist the captured audio to a local file path alongside recognition results (Android 13+ and iOS).
+- **Volume metering** — subscribe to real-time volume-level events to drive animated indicators.
+- **Web Speech API polyfill** — drop in `ExpoWebSpeechRecognition` as a global polyfill so third-party libraries that depend on `window.SpeechRecognition` work on native without changes.
+- **Contextual strings** — bias the recognizer toward custom vocabulary unique to your application.
+- **Language detection** — automatically detect and optionally switch the recognition language mid-session (Android 14+ with on-device model).
+
+## Architecture overview
+
+The library is structured as a thin JavaScript layer over three native bridges:
+
+| Layer | iOS | Android | Web |
+|---|---|---|---|
+| Native engine | `SFSpeechRecognizer` | `SpeechRecognizer` | Browser `SpeechRecognition` |
+| Expo module | `ExpoSpeechRecognitionModule` (Swift) | `ExpoSpeechRecognitionModule` (Kotlin) | JavaScript shim |
+| JS API | `ExpoSpeechRecognitionModule` + `useSpeechRecognitionEvent` | same | same |
+
+Application code always imports from `expo-speech-recognition` and calls the same methods regardless of target platform. The Expo config plugin handles the required `AndroidManifest.xml` entries and iOS permission strings at build time so you do not need to touch native files manually.
+
+## Explore the docs
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Build a working speech recognition component in under five minutes.
+  </Card>
+  <Card title="Hooks" icon="fishing-rod" href="/usage/hooks">
+    Use `useSpeechRecognitionEvent` to subscribe to recognition events in React components.
+  </Card>
+  <Card title="Module methods" icon="cube" href="/api/module-methods">
+    Full reference for every method on `ExpoSpeechRecognitionModule`.
+  </Card>
+  <Card title="Platform compatibility" icon="table" href="/guides/platform-compatibility">
+    See which features are available on each Android version, iOS version, and browser.
+  </Card>
+</CardGroup>

@@ -1,0 +1,143 @@
+---
+title: "Persisting audio recordings during speech recognition"
+description: "Enable recordingOptions.persist to save recognized audio to a local WAV file on Android 13+ and iOS alongside live speech transcription."
+---
+
+Audio recording persistence lets you save the microphone input captured during a speech recognition session to a local file on the device. This is useful when you want to replay audio, send it to an external transcription service, or store it for later review. The feature is available on **Android 13+ and iOS** — call `supportsRecording()` before enabling it to confirm the device supports it.
+
+<Warning>
+  This feature requires Android 13 or later. It is not available on Android 12 or below. On iOS, it is supported on all versions supported by this library. Always call `supportsRecording()` before enabling `recordingOptions.persist`.
+</Warning>
+
+## Checking availability
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const canRecord = ExpoSpeechRecognitionModule.supportsRecording();
+console.log("Recording supported:", canRecord);
+```
+
+## `recordingOptions` parameters
+
+Pass a `recordingOptions` object to `start()` to configure audio persistence.
+
+<ParamField path="recordingOptions.persist" type="boolean" required default="false">
+  Whether to persist the captured audio to a local file. When `true`, the `audiostart` and `audioend` events will include a `uri` property with the file path.
+</ParamField>
+
+<ParamField path="recordingOptions.outputDirectory" type="string" default="FileSystem.CacheDirectory">
+  The directory to write the audio file to. Defaults to the app's cache directory. You can pass a value from `expo-file-system`, for example `Paths.document.uri`, to store the file in a persistent location.
+</ParamField>
+
+<ParamField path="recordingOptions.outputFileName" type="string" default='"recording_{timestamp}.wav"'>
+  The file name for the output audio file. You can retrieve the final path from the `audiostart` or `audioend` event `uri` property. Defaults to a generated name such as `recording_1720678500903.wav`.
+</ParamField>
+
+<ParamField path="recordingOptions.outputSampleRate" type="number">
+  The sample rate (Hz) of the output audio file. **iOS only.** Android always outputs at 16000 Hz. On iOS, the default is device-specific (44100 or 48000 Hz). Set to `16000` for compatibility with most external services.
+</ParamField>
+
+<ParamField path="recordingOptions.outputEncoding" type='"pcmFormatFloat32" | "pcmFormatFloat64" | "pcmFormatInt16" | "pcmFormatInt32"'>
+  The PCM encoding format for the output audio file. **iOS only.** Defaults to `pcmFormatFloat32`. Use `pcmFormatInt16` to produce a standard 16-bit WAV that most external APIs (Google Speech, Whisper, Deepgram) expect.
+</ParamField>
+
+## Default audio output formats
+
+| Platform | Format | Sample rate | Channels | Extension |
+|----------|--------|-------------|----------|-----------|
+| Android  | Linear PCM | 16000 Hz | Mono | `.wav` |
+| iOS      | 32-bit Float PCM | 44100 or 48000 Hz (device-specific) | Mono | `.wav` / `.caf` |
+
+<Tip>
+  For maximum compatibility with external transcription APIs such as Google Speech-to-Text, Whisper, and Deepgram, configure iOS to output 16-bit PCM at 16000 Hz by setting `outputSampleRate: 16000` and `outputEncoding: "pcmFormatInt16"`.
+</Tip>
+
+## Reading the recorded file URI
+
+When `persist` is enabled, both the `audiostart` and `audioend` events include a `uri` field with the local file path.
+
+<Note>
+  The file at `event.uri` is not complete until the `audioend` event fires. Do not read or move the file from the `audiostart` event handler — wait for `audioend`.
+</Note>
+
+| Event | `uri` value | Safe to use? |
+|-------|-------------|--------------|
+| `audiostart` | Path where recording will be written | No — recording is in progress |
+| `audioend` | Path to the completed recording | Yes — file is fully written |
+
+## Complete example
+
+The example below starts speech recognition with audio recording enabled, retrieves the file path when recording ends, and plays it back with `expo-audio`.
+
+```tsx
+import { useState } from "react";
+import { Button, View } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+import { useAudioPlayer } from "expo-audio";
+
+function RecordAudio() {
+  const [recording, setRecording] = useState(false);
+  const [recordingUri, setRecordingUri] = useState<string | null>(null);
+
+  const handleStart = () => {
+    setRecording(true);
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      recordingOptions: {
+        persist: true,
+        // Optional: change the output directory
+        // e.g. Paths.document.uri from expo-file-system
+        outputDirectory:
+          "/data/user/0/expo.modules.speechrecognition.example/files",
+        // Optional: set a specific file name
+        outputFileName: "recording.wav",
+        // Optional: iOS only — override the sample rate
+        outputSampleRate: 16000,
+        // Optional: iOS only — override the encoding
+        outputEncoding: "pcmFormatInt16",
+      },
+    });
+  };
+
+  useSpeechRecognitionEvent("audiostart", (event) => {
+    // The URI is available here but the file is not yet complete
+    console.log("Recording started, file will be at:", event.uri);
+  });
+
+  useSpeechRecognitionEvent("audioend", (event) => {
+    // The file is fully written and safe to use
+    // Android: "file:///data/user/0/.../cache/recording_1720678500903.wav"
+    // iOS:     "file:///path/to/Library/Caches/audio_CD5E6C6C-....wav"
+    console.log("Recording saved to:", event.uri);
+    setRecordingUri(event.uri);
+    setRecording(false);
+  });
+
+  return (
+    <View>
+      <Button title="Start" onPress={handleStart} disabled={recording} />
+      {recordingUri && <AudioPlayer source={recordingUri} />}
+    </View>
+  );
+}
+
+// AudioPlayer.tsx — plays the recorded file using expo-audio
+function AudioPlayer(props: { source: string }) {
+  const player = useAudioPlayer(props.source);
+  return <Button title="Play" onPress={player.play} />;
+}
+```
+
+## Playback with expo-audio
+
+The `expo-audio` package provides the `useAudioPlayer` hook shown above. Install it with:
+
+```bash
+npx expo install expo-audio
+```
+
+Pass the `uri` string from the `audioend` event directly as the `source` argument. The player handles local `file://` URIs on both Android and iOS.

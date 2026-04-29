@@ -1,0 +1,150 @@
+---
+title: "Transcribing audio files with expo-speech-recognition"
+description: "Use the audioSource.uri option to transcribe local audio files instead of the microphone on Android 13+ and iOS, with support for WAV and MP3 formats."
+---
+
+File transcription lets you pass a local audio file to the speech recognition engine instead of capturing live microphone input. This is useful for transcribing pre-recorded voice memos, downloaded podcasts, or any audio you have already saved to the device. The feature is available on **Android 13+ and iOS** — if the device does not support it you will receive an `error` event with the code `audio-capture`.
+
+<Warning>
+  File transcription requires Android 13 or later. On devices that do not support this feature, `start()` will immediately emit an `error` event with the code `audio-capture`. It is not available on Android 12 or below.
+</Warning>
+
+## Recommended settings for long files
+
+For files that are longer than a few seconds, enable on-device recognition to avoid network rate limiting:
+
+- **iOS** — set `requiresOnDeviceRecognition: true`. This avoids Apple's server-based recognition quota and generally performs better for long-form content.
+- **Android** — on-device recognition requires the language model to be installed. Check with `getSupportedLocales()` first. See [On-device recognition](/guides/on-device-recognition) for download instructions.
+
+## `audioSource` parameters
+
+Pass an `audioSource` object to `start()` to transcribe a file instead of the microphone.
+
+<ParamField path="audioSource.uri" type="string" required>
+  Local file URI to transcribe. For example: `"file:///storage/emulated/0/Download/audio.wav"`. Remote URLs are not supported — download the file first.
+</ParamField>
+
+<ParamField path="audioSource.audioChannels" type="number" default="1">
+  **Android only.** The number of audio channels in the source file. Defaults to `1` (mono).
+</ParamField>
+
+<ParamField path="audioSource.audioEncoding" type="AudioEncodingAndroid">
+  **Android only.** The audio encoding format of the source file. Use the `AudioEncodingAndroid` enum to specify the correct constant. Defaults to `AudioEncodingAndroid.ENCODING_PCM_16BIT` (value `2`).
+</ParamField>
+
+<ParamField path="audioSource.sampleRate" type="number" default="16000">
+  **Android only.** The sample rate of the source audio in Hz. Defaults to `16000`.
+</ParamField>
+
+<ParamField path="audioSource.chunkDelayMillis" type="number">
+  **Android only.** The delay in milliseconds between 4 KiB chunks of audio streamed to the recognition service. Increase this to avoid rate limiting on network-based recognition. Defaults to `50 ms` for network-based recognition and `15 ms` for on-device recognition.
+</ParamField>
+
+## Supported audio formats
+
+The following formats have been verified on real devices.
+
+### Android (Samsung Galaxy S23 Ultra, Android 14)
+
+| Format | Sample rate | Channels |
+|--------|-------------|----------|
+| PCM WAV (16-bit) | 16000 Hz | 1 |
+| MP3 | 16000 Hz | 1 |
+| MP3 | 16000 Hz | 2 |
+| Ogg Vorbis | 16000 Hz | 1 |
+
+### iOS (iPhone 15 Pro Max, iOS 17.5)
+
+| Format | Sample rate | Channels |
+|--------|-------------|----------|
+| PCM WAV (16-bit) | 16000 Hz | 1 |
+| MP3 | 16000 Hz | 1 |
+
+<Note>
+  These formats were verified on the listed devices. Other sample rates or formats may work but are not guaranteed. When preparing files for transcription, 16000 Hz mono PCM WAV is the safest choice for both platforms.
+</Note>
+
+## `AudioEncodingAndroid` values
+
+Use these constants from the `AudioEncodingAndroid` enum when specifying `audioSource.audioEncoding` on Android:
+
+| Constant | Value | Format |
+|----------|-------|--------|
+| `ENCODING_PCM_16BIT` | `2` | PCM 16-bit per sample (recommended) |
+| `ENCODING_PCM_8BIT` | `3` | PCM 8-bit per sample |
+| `ENCODING_PCM_FLOAT` | `4` | 32-bit float per sample |
+| `ENCODING_MP3` | `9` | MP3 compressed |
+| `ENCODING_OPUS` | `20` | Opus compressed |
+
+## Complete example
+
+```tsx
+import { useState } from "react";
+import { Button, Text, View, Platform } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+  AudioEncodingAndroid,
+} from "expo-speech-recognition";
+
+function TranscribeAudioFile() {
+  const [transcription, setTranscription] = useState("");
+
+  const handleTranscribe = () => {
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,
+      // On iOS, use on-device recognition for long files to avoid rate limiting.
+      // On Android, check getSupportedLocales() first to confirm the model is installed.
+      requiresOnDeviceRecognition: Platform.OS === "ios",
+      audioSource: {
+        // Local file URI to transcribe
+        uri: "file:///path/to/audio.wav",
+        // Android only: number of channels in the source audio
+        audioChannels: 1,
+        // Android only: audio encoding format
+        audioEncoding: AudioEncodingAndroid.ENCODING_PCM_16BIT,
+        // Android only: sample rate in Hz
+        sampleRate: 16000,
+        // Android only: delay between chunks (ms)
+        // Increase to avoid rate limiting on network-based recognition
+        chunkDelayMillis: undefined, // uses default
+      },
+    });
+  };
+
+  useSpeechRecognitionEvent("result", (ev) => {
+    // For long files, multiple final results may be returned.
+    // Concatenate them to build the full transcript.
+    setTranscription((prev) =>
+      ev.isFinal ? prev + ev.results[0]?.transcript + " " : prev,
+    );
+  });
+
+  return (
+    <View>
+      <Button title="Transcribe" onPress={handleTranscribe} />
+      <Text>{transcription}</Text>
+    </View>
+  );
+}
+```
+
+## Handling multiple final results
+
+For long audio files the speech recognition engine splits the audio into segments and emits a `result` event with `isFinal: true` for each segment. You must concatenate these to build the complete transcript:
+
+```tsx
+const [transcript, setTranscript] = useState("");
+
+useSpeechRecognitionEvent("result", (ev) => {
+  if (ev.isFinal) {
+    // Append each final segment to the running transcript
+    setTranscript((prev) => prev + ev.results[0]?.transcript + " ");
+  }
+});
+```
+
+<Tip>
+  Consider trimming trailing whitespace from the final transcript when the `end` event fires.
+</Tip>

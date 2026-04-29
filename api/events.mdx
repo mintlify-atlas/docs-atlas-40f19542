@@ -1,0 +1,420 @@
+---
+title: "Speech recognition events and data shapes reference"
+description: "Complete reference for all speech recognition events emitted by ExpoSpeechRecognitionModule, including event data shapes and platform-specific notes."
+---
+
+`ExpoSpeechRecognitionModule` emits events throughout the lifecycle of a recognition session. You can subscribe to these events using the `useSpeechRecognitionEvent` hook inside React components, or by calling `addListener` directly on the module for use outside of components.
+
+```typescript
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+// Inside a React component
+useSpeechRecognitionEvent("result", (event) => {
+  console.log(event.results[0]?.transcript);
+});
+
+// Outside a React component
+const listener = ExpoSpeechRecognitionModule.addListener("result", (event) => {
+  console.log(event.results[0]?.transcript);
+});
+
+// Remove the listener when done
+listener.remove();
+```
+
+---
+
+## Event overview
+
+| Event | When it fires | Event data |
+|---|---|---|
+| `start` | Recognition session has started | `null` |
+| `audiostart` | Audio capturing has begun | `{ uri: string \| null }` |
+| `soundstart` | Any sound (speech or noise) detected | `null` |
+| `speechstart` | Speech sound has been detected | `null` |
+| `result` | A transcription result is available | `{ isFinal: boolean, results: ExpoSpeechRecognitionResult[] }` |
+| `nomatch` | Recognition returned no significant result | `null` |
+| `error` | An error occurred | `{ error: ExpoSpeechRecognitionErrorCode, message: string, code?: number }` |
+| `speechend` | Speech audio has stopped being detected | `null` |
+| `soundend` | Sound has stopped being detected | `null` |
+| `audioend` | Audio capturing has ended | `{ uri: string \| null }` |
+| `end` | Recognition session has fully ended | `null` |
+| `volumechange` | Input volume level changed | `{ value: number }` |
+| `languagedetection` | Language was detected or switched | `{ detectedLanguage, confidence, topLocaleAlternatives }` |
+
+---
+
+## Event flow
+
+Understanding the order events are emitted helps you build reliable UIs.
+
+### Non-continuous mode
+
+In non-continuous mode (`continuous: false`), the session ends automatically after the first final result.
+
+```
+start
+  → audiostart
+    → volumechange (repeated, if enabled)
+    → result { isFinal: false } (repeated, if interimResults: true)
+  → result { isFinal: true }
+  → audioend
+  → end
+```
+
+If no speech is detected or an error occurs before a final result:
+
+```
+start
+  → audiostart
+  → nomatch  (or error with code "no-speech")
+  → audioend
+  → end
+```
+
+### Continuous mode
+
+In continuous mode (`continuous: true`), interim and final results cover successive utterance segments. The session keeps running until you call `stop()` or `abort()`.
+
+```
+start
+  → audiostart
+    → result { isFinal: false }  (repeated per segment)
+    → result { isFinal: true }   (repeated per segment)
+  → audioend
+  → end
+```
+
+<Note>On Android in continuous mode, results are delivered as a segmented session. Each final result represents a new utterance segment, and subsequent partial results cover the next segment. Concatenate previous final results to build the full transcript.</Note>
+
+---
+
+## `start`
+
+Emitted immediately after the recognition session is initialised. Use this event to update your UI so the user knows when to begin speaking.
+
+**Event data:** `null`
+
+```typescript
+useSpeechRecognitionEvent("start", () => {
+  setRecognizing(true);
+});
+```
+
+---
+
+## `audiostart`
+
+Emitted when the device begins capturing audio. If `recordingOptions.persist` is enabled, the event includes the URI of the file being written to. Do not read the file until `audioend` is emitted.
+
+**Event data:**
+
+<ResponseField name="uri" type="string | null">
+  Local file URI of the recording if `recordingOptions.persist` is `true`, otherwise `null`.
+
+  Example URIs:
+  - Android: `file:///data/user/0/com.example/cache/recording_1720678500903.wav`
+  - iOS: `file:///path/to/Library/Caches/audio_CD5E6C6C-3D9D-4754-9188-D6FAF97D9DF2.wav`
+</ResponseField>
+
+```typescript
+useSpeechRecognitionEvent("audiostart", (event) => {
+  if (event.uri) {
+    console.log("Recording to:", event.uri);
+    // Do NOT read the file yet — wait for "audioend"
+  }
+});
+```
+
+---
+
+## `speechstart`
+
+Emitted when any recognisable sound is detected. Fires once per session on iOS (after a result has occurred). On Android it may fire multiple times.
+
+**Event data:** `null`
+
+```typescript
+useSpeechRecognitionEvent("speechstart", () => {
+  console.log("Speech detected");
+});
+```
+
+---
+
+## `result`
+
+Emitted when the recognizer produces a transcription result. Results may be partial (`isFinal: false`) or final (`isFinal: true`).
+
+**Event data:**
+
+<ResponseField name="isFinal" type="boolean">
+  `true` when this is the completed transcription for the current segment. `false` for partial, in-progress results (only emitted when `interimResults: true`).
+</ResponseField>
+
+<ResponseField name="results" type="ExpoSpeechRecognitionResult[]">
+  An ordered array of transcription alternatives, up to `maxAlternatives` entries.
+
+  <Expandable title="ExpoSpeechRecognitionResult fields">
+    <ResponseField name="transcript" type="string">
+      The recognised text.
+    </ResponseField>
+    <ResponseField name="confidence" type="number">
+      Confidence score between `0.0` and `1.0`. Returns `-1` when unavailable. On iOS, partial results always return `0`.
+    </ResponseField>
+    <ResponseField name="segments" type="ExpoSpeechRecognitionResultSegment[]">
+      Word-level timing and confidence data. On Android, requires SDK 34+ (Android 14) and the `com.google.android.as` service; only available on final results and only for the first transcript. On iOS, confidence is `0` on partial results.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+useSpeechRecognitionEvent("result", (event) => {
+  const transcript = event.results[0]?.transcript ?? "";
+
+  if (event.isFinal) {
+    setFinalTranscript((prev) => prev + " " + transcript);
+  } else {
+    setPartialTranscript(transcript);
+  }
+});
+```
+
+---
+
+## `nomatch`
+
+Emitted when recognition completes but produces no significant result. May also fire after a session is cancelled.
+
+**Event data:** `null`
+
+```typescript
+useSpeechRecognitionEvent("nomatch", () => {
+  console.log("No speech matched — try again");
+});
+```
+
+---
+
+## `error`
+
+Emitted when an error occurs during the recognition session. An `error` event with code `"aborted"` is always emitted when `abort()` is called.
+
+**Event data:**
+
+<ResponseField name="error" type="ExpoSpeechRecognitionErrorCode">
+  A string error code. See the full list of error codes in the [types reference](/api/types).
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  A human-readable description of the error.
+</ResponseField>
+
+<ResponseField name="code" type="number">
+  Optional. The underlying native platform error code. On Android, maps to `SpeechRecognizer` error constants (e.g. `ERROR_AUDIO = 3`). Value `-1` indicates a generic or unknown error. Useful for debugging.
+</ResponseField>
+
+```typescript
+import {
+  type ExpoSpeechRecognitionErrorCode,
+  SpeechRecognizerErrorAndroid,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("error", (event) => {
+  // Handle by error code
+  switch (event.error as ExpoSpeechRecognitionErrorCode) {
+    case "not-allowed":
+      promptUserToGrantPermissions();
+      break;
+    case "network":
+      showOfflineWarning();
+      break;
+    case "no-speech":
+      showNoSpeechMessage();
+      break;
+    default:
+      console.warn("Speech error:", event.error, event.message);
+  }
+
+  // Advanced: use native Android error code for fine-grained handling
+  if (event.code === SpeechRecognizerErrorAndroid.ERROR_NETWORK_TIMEOUT) {
+    retryWithBackoff();
+  }
+});
+```
+
+### Error codes
+
+| Code | Description |
+|---|---|
+| `aborted` | `abort()` was called by the application |
+| `audio-capture` | Audio recording hardware error |
+| `interrupted` | iOS: audio session interrupted (phone call, Siri, alarm) |
+| `bad-grammar` | Invalid grammar provided (Web only) |
+| `language-not-supported` | The requested locale is not supported |
+| `network` | Network failure during recognition |
+| `no-speech` | No speech was detected before the session timed out |
+| `not-allowed` | Microphone or speech recognizer permission was denied |
+| `service-not-allowed` | Speech recognizer is unavailable on the device |
+| `busy` | The recognizer is busy with another request |
+| `client` | Android only: unknown client-side error |
+| `speech-timeout` | Android only: no speech input received |
+| `unknown` | Android only: unclassified error |
+
+---
+
+## `soundstart`
+
+Emitted when any sound — recognizable speech or not — has been detected.
+
+**Event data:** `null`
+
+```typescript
+useSpeechRecognitionEvent("soundstart", () => {
+  console.log("Sound detected");
+});
+```
+
+---
+
+## `soundend`
+
+Emitted when sound is no longer detected.
+
+**Event data:** `null`
+
+```typescript
+useSpeechRecognitionEvent("soundend", () => {
+  console.log("Sound ended");
+});
+```
+
+---
+
+## `speechend`
+
+Emitted when the speech audio being recognised stops being detected.
+
+**Event data:** `null`
+
+<Warning>Not yet supported on iOS.</Warning>
+
+```typescript
+useSpeechRecognitionEvent("speechend", () => {
+  console.log("Speech ended");
+});
+```
+
+---
+
+## `audioend`
+
+Emitted when the device stops capturing audio. If `recordingOptions.persist` is enabled, the recording file is safe to read from this point onwards.
+
+**Event data:**
+
+<ResponseField name="uri" type="string | null">
+  Local file URI of the completed recording if `recordingOptions.persist` is `true`, otherwise `null`. The file is fully written and safe to use once this event fires.
+</ResponseField>
+
+```typescript
+useSpeechRecognitionEvent("audioend", (event) => {
+  if (event.uri) {
+    setRecordingUri(event.uri);
+    console.log("Recording saved to:", event.uri);
+  }
+});
+```
+
+---
+
+## `end`
+
+Emitted when the recognition session has fully terminated. This is always the last event emitted in a session, including after errors.
+
+**Event data:** `null`
+
+```typescript
+useSpeechRecognitionEvent("end", () => {
+  setRecognizing(false);
+});
+```
+
+---
+
+## `volumechange`
+
+Emitted at a configurable interval with the current microphone input volume. Enable this event by setting `volumeChangeEventOptions.enabled: true` in `start()`.
+
+**Event data:**
+
+<ResponseField name="value" type="number">
+  A float value between `-2` and `10` representing the current microphone volume. Treat any value below `0` as inaudible.
+</ResponseField>
+
+<Note>This event is disabled by default. Enable it via `volumeChangeEventOptions.enabled: true` to avoid unnecessary overhead.</Note>
+
+```typescript
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  volumeChangeEventOptions: {
+    enabled: true,
+    intervalMillis: 100,
+  },
+});
+
+useSpeechRecognitionEvent("volumechange", (event) => {
+  const isAudible = event.value > 0;
+  setVolume(event.value);
+});
+```
+
+---
+
+## `languagedetection`
+
+Emitted when the speech recognizer detects or switches the spoken language. Useful for multilingual recognition sessions.
+
+**Event data:**
+
+<ResponseField name="detectedLanguage" type="string">
+  The BCP-47 locale tag of the detected language, e.g. `"en-us"`, `"de-de"`.
+</ResponseField>
+
+<ResponseField name="confidence" type="number">
+  Detection confidence between `0.0` and `1.0`.
+
+  | Value | Meaning |
+  |---|---|
+  | `1.0` | Highly confident |
+  | `0.8` | Confident |
+  | `0.5` | Not confident |
+  | `0.0` | Unknown |
+</ResponseField>
+
+<ResponseField name="topLocaleAlternatives" type="string[]">
+  Alternative BCP-47 locale tags for the same language, e.g. `["en-au", "en-gb"]`.
+</ResponseField>
+
+<Warning>Language detection is only available on Android 14+ using the `com.google.android.as` service package. You must also set `EXTRA_ENABLE_LANGUAGE_DETECTION: true` in `androidIntentOptions` when calling `start()`.</Warning>
+
+```typescript
+useSpeechRecognitionEvent("languagedetection", (event) => {
+  console.log("Detected language:", event.detectedLanguage);
+  console.log("Confidence:", event.confidence);
+  console.log("Alternatives:", event.topLocaleAlternatives.join(", "));
+});
+
+ExpoSpeechRecognitionModule.start({
+  androidIntentOptions: {
+    EXTRA_ENABLE_LANGUAGE_DETECTION: true,
+    // Optionally allow automatic language switching
+    EXTRA_ENABLE_LANGUAGE_SWITCH: "balanced",
+  },
+  androidRecognitionServicePackage: "com.google.android.as",
+});
+```

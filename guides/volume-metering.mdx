@@ -1,0 +1,97 @@
+---
+title: "Real-time volume metering during speech recognition"
+description: "Enable volumeChangeEventOptions to receive real-time microphone input volume levels between -2 and 10 for voice UI animations and feedback."
+---
+
+Volume metering gives your app real-time access to the microphone input level during a speech recognition session. This lets you build animated voice indicators, give users visual feedback that the microphone is picking up their voice, or suppress UI noise by only reacting to audible input. The feature is available on all supported platforms and Android versions.
+
+## `volumeChangeEventOptions` parameters
+
+Pass a `volumeChangeEventOptions` object to `start()` to enable volume events.
+
+<ParamField path="volumeChangeEventOptions.enabled" type="boolean" default="false">
+  Whether to emit `volumechange` events during recognition. Must be set to `true` to receive any volume data.
+</ParamField>
+
+<ParamField path="volumeChangeEventOptions.intervalMillis" type="number" default="100">
+  How often to emit `volumechange` events, in milliseconds. The default is 100 ms on iOS. Increasing this value reduces event frequency and improves performance.
+</ParamField>
+
+## The `volumechange` event
+
+When enabled, the `volumechange` event fires at the configured interval with a single `value` property:
+
+| Property | Type | Range | Notes |
+|----------|------|-------|-------|
+| `value` | `number` | `-2` to `10` | Values below `0` are considered inaudible |
+
+A value below `0` means the microphone is not picking up any recognizable audio. Use this threshold to decide whether to animate a voice indicator or leave it idle.
+
+<Note>
+  Increasing `intervalMillis` improves rendering performance by reducing the number of state updates per second. For smooth 60 fps animations, values between `50`–`100 ms` are a good starting point. For less demanding UIs, `200`–`300 ms` is sufficient.
+</Note>
+
+## Complete example
+
+```tsx
+import { useState } from "react";
+import { Button, Text, View } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+function VolumeMeteringExample() {
+  const [volume, setVolume] = useState<number | null>(null);
+
+  useSpeechRecognitionEvent("volumechange", (event) => {
+    // event.value is between -2 and 10
+    // anything <= 0 is considered inaudible
+    setVolume(event.value);
+  });
+
+  const handleStart = () => {
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      volumeChangeEventOptions: {
+        enabled: true,
+        // Emit a volume event every 300ms
+        intervalMillis: 300,
+      },
+    });
+  };
+
+  const isAudible = volume !== null && volume > 0;
+
+  return (
+    <View>
+      <Button title="Start" onPress={handleStart} />
+      <Text>Volume: {volume?.toFixed(2) ?? "—"}</Text>
+      <Text>{isAudible ? "Speaking..." : "Listening..."}</Text>
+    </View>
+  );
+}
+```
+
+## Driving animations with the volume value
+
+The `value` field ranges from `-2` to `10`. A common pattern is to map this range to an animation property such as `scale` or `opacity`:
+
+```tsx
+// Map -2..10 to 0..1 for use as an animation driver
+function normalizeVolume(value: number): number {
+  const min = -2;
+  const max = 10;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+useSpeechRecognitionEvent("volumechange", (event) => {
+  const normalized = normalizeVolume(event.value);
+  // Use normalized (0–1) to drive scale, opacity, etc.
+  animatedScale.value = 1 + normalized * 0.5; // scale between 1.0 and 1.5
+});
+```
+
+<Tip>
+  For smooth, physics-based animations consider using `react-native-reanimated`. It lets you update shared values directly from event handlers without triggering React re-renders. See the [VolumeMeteringAvatar example](https://github.com/jamsch/expo-speech-recognition/tree/main/example/components/VolumeMeteringAvatar.tsx) in the repository for a complete animated voice avatar implementation.
+</Tip>

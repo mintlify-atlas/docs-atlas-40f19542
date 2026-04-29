@@ -1,0 +1,269 @@
+---
+title: "Direct module API for full speech recognition control"
+description: "Use ExpoSpeechRecognitionModule directly to start, stop, and subscribe to speech recognition events with full control over options and lifecycle."
+---
+
+`ExpoSpeechRecognitionModule` is the native module that powers the library. You can call it directly when you need to manage event listeners yourself — for example, in non-React contexts such as background tasks, Zustand stores, or utility modules outside the component tree. Inside React components, the `useSpeechRecognitionEvent` hook is generally more convenient because it handles listener cleanup automatically. The direct API gives you the same capabilities with explicit control over when listeners are added and removed.
+
+## Starting recognition
+
+Call `start()` with an options object to begin a recognition session. At minimum, provide a `lang`.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+ExpoSpeechRecognitionModule.start({ lang: "en-US" });
+```
+
+### start() options
+
+<ParamField path="body.lang" type="string" default="en-US">
+  BCP-47 language tag for recognition. Examples: `"en-US"`, `"fr-FR"`, `"ja-JP"`.
+</ParamField>
+
+<ParamField path="body.interimResults" type="boolean" default="false">
+  When `true`, fires `result` events with partial transcripts before the final result is available. On iOS, final results are only available after recognition stops.
+</ParamField>
+
+<ParamField path="body.maxAlternatives" type="number" default="5">
+  Maximum number of alternative transcriptions to return per result event. Each alternative has its own `transcript` and `confidence` value.
+</ParamField>
+
+<ParamField path="body.continuous" type="boolean" default="false">
+  When `false`, recognition stops automatically after a final result. When `true`, recognition continues until `stop()` or `abort()` is called. Not supported on Android 12 and below.
+</ParamField>
+
+<ParamField path="body.requiresOnDeviceRecognition" type="boolean" default="false">
+  When `true`, prevents audio from being sent to the network. Recognition only proceeds if the device has an installed language model. Use `getSupportedLocales()` to verify model availability before enabling this option.
+</ParamField>
+
+<ParamField path="body.addsPunctuation" type="boolean" default="false">
+  Include punctuation (full stops, commas) in transcription results. On Android, requires on-device recognition and Android 13+.
+</ParamField>
+
+<ParamField path="body.contextualStrings" type="string[]">
+  Short custom phrases unique to your app that help bias the recognizer. Examples: proper nouns, product names, or uncommon vocabulary. Works on both iOS and Android (Android API level 33+).
+</ParamField>
+
+<ParamField path="body.androidIntentOptions" type="object">
+  Extra options passed directly to the Android `RecognizerIntent`. Useful for advanced tuning such as silence thresholds, language detection, formatting, and offensive word masking. See the [Android RecognizerIntent docs](https://developer.android.com/reference/android/speech/RecognizerIntent) for the full list.
+</ParamField>
+
+<ParamField path="body.androidRecognitionServicePackage" type="string">
+  Package name of the Android speech recognition service to use. Defaults to the system default. Examples: `"com.google.android.tts"`, `"com.google.android.as"`. Use `getSpeechRecognitionServices()` to discover available services.
+</ParamField>
+
+<ParamField path="body.androidIntent" type="string" default="android.speech.action.RECOGNIZE_SPEECH">
+  The Android recognition intent action. Options:
+  - `"android.speech.action.RECOGNIZE_SPEECH"` — standard speech recognition (default)
+  - `"android.speech.action.VOICE_SEARCH_HANDS_FREE"` — hands-free voice search
+  - `"android.speech.action.WEB_SEARCH"` — web search triggered by speech
+</ParamField>
+
+<ParamField path="body.iosTaskHint" type="string" default="unspecified">
+  Hints to the iOS recognizer what kind of speech task is being performed. Options: `"unspecified"`, `"dictation"`, `"search"`, `"confirmation"`. Setting `"confirmation"` improves accuracy for short single-word inputs.
+</ParamField>
+
+<ParamField path="body.iosCategory" type="object">
+  Configures the `AVAudioSession` category, options, and mode prior to starting recognition. Useful for apps that mix speech recognition with audio playback. Default: `{ category: "playAndRecord", categoryOptions: ["defaultToSpeaker", "allowBluetooth"], mode: "measurement" }`.
+</ParamField>
+
+<ParamField path="body.iosVoiceProcessingEnabled" type="boolean" default="false">
+  iOS only. Applies additional signal processing to reduce microphone feedback from speakers. Note: this may switch the `AVAudioSession` mode to `"voiceChat"` and lower speaker playback volume.
+</ParamField>
+
+<ParamField path="body.recordingOptions" type="object">
+  Options for persisting the captured audio to a local file. Available on Android 13+ and iOS.
+
+  - `persist` (boolean, default `false`) — write audio to a file
+  - `outputDirectory` (string) — directory URI for the output file (default: cache directory)
+  - `outputFileName` (string) — file name (default: `"recording_<timestamp>.wav"`)
+  - `outputSampleRate` (number) — sample rate in Hz, iOS only
+  - `outputEncoding` (string) — encoding format, iOS only: `"pcmFormatFloat32"`, `"pcmFormatFloat64"`, `"pcmFormatInt16"`, `"pcmFormatInt32"`
+</ParamField>
+
+<ParamField path="body.audioSource" type="object">
+  Transcribe a local audio file instead of using the microphone. Available on Android 13+ and iOS.
+
+  - `uri` (string) — local file URI, e.g. `"file:///path/to/audio.wav"`
+  - `audioChannels` (number, Android only) — number of audio channels (default: `1`)
+  - `audioEncoding` (AudioEncodingAndroid, Android only) — encoding from `AudioFormat`
+  - `sampleRate` (number, Android only) — sample rate in Hz (default: `16000`)
+  - `chunkDelayMillis` (number, Android only) — delay between streamed chunks; increase to avoid rate limiting on network-based recognition
+</ParamField>
+
+<ParamField path="body.volumeChangeEventOptions" type="object">
+  Settings for `volumechange` events.
+
+  - `enabled` (boolean, default `false`) — emit volume events
+  - `intervalMillis` (number) — how often to emit events in milliseconds (default: 100ms on iOS)
+</ParamField>
+
+## Stopping recognition
+
+<CardGroup cols={2}>
+  <Card title="stop()" icon="circle-stop">
+    Stops capturing audio and attempts to return a final result through a `result` event before ending the session.
+  </Card>
+  <Card title="abort()" icon="circle-xmark">
+    Immediately cancels recognition without processing a final result. Emits an `error` event with code `"aborted"` followed by `end`.
+  </Card>
+</CardGroup>
+
+### Event sequences
+
+After calling `stop()`, expect the following events in order:
+
+```
+result (final) | nomatch | error ("no-speech")
+→ audioend
+→ end
+```
+
+After calling `abort()`, expect:
+
+```
+error ("aborted")
+→ end
+```
+
+```ts
+// Stop and get the last result
+ExpoSpeechRecognitionModule.stop();
+
+// Discard any pending result
+ExpoSpeechRecognitionModule.abort();
+```
+
+## Adding and removing listeners
+
+Use `addListener` to subscribe to events outside of React components. The returned subscription object has a `remove()` method to unsubscribe.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const startListener = ExpoSpeechRecognitionModule.addListener("start", () => {
+  console.log("Speech recognition started");
+});
+
+const endListener = ExpoSpeechRecognitionModule.addListener("end", () => {
+  console.log("Speech recognition ended");
+});
+
+const resultListener = ExpoSpeechRecognitionModule.addListener(
+  "result",
+  (event) => {
+    // event.results is an array of alternatives
+    // event.isFinal indicates whether this is the final result
+    console.log("results:", event.results, "final:", event.isFinal);
+  },
+);
+
+const errorListener = ExpoSpeechRecognitionModule.addListener(
+  "error",
+  (event) => {
+    console.log("error code:", event.error, "error message:", event.message);
+  },
+);
+
+// Remove individual listeners when done
+startListener.remove();
+endListener.remove();
+resultListener.remove();
+errorListener.remove();
+```
+
+## Complete example
+
+The following example demonstrates the full direct module API, including all available `start()` options.
+
+```ts
+import {
+  ExpoSpeechRecognitionModule,
+  AudioEncodingAndroid,
+} from "expo-speech-recognition";
+
+// Register event listeners
+const startListener = ExpoSpeechRecognitionModule.addListener("start", () => {
+  console.log("Speech recognition started");
+});
+
+const endListener = ExpoSpeechRecognitionModule.addListener("end", () => {
+  console.log("Speech recognition ended");
+});
+
+const resultListener = ExpoSpeechRecognitionModule.addListener(
+  "result",
+  (event) => {
+    console.log("results:", event.results, "final:", event.isFinal);
+  },
+);
+
+const errorListener = ExpoSpeechRecognitionModule.addListener(
+  "error",
+  (event) => {
+    console.log("error code:", event.error, "error message:", event.message);
+  },
+);
+
+// Start speech recognition
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  // Return results as they become available without waiting for the final result
+  interimResults: true,
+  // Maximum number of alternative transcriptions to return
+  maxAlternatives: 1,
+  // Continuous recognition — not supported on Android 12 and below
+  continuous: true,
+  // Prevent device from sending audio over the network
+  requiresOnDeviceRecognition: false,
+  // Include punctuation in results (Android 13+ on-device only)
+  addsPunctuation: false,
+  // Custom vocabulary hints
+  contextualStrings: ["Carlsen", "Nepomniachtchi", "Praggnanandhaa"],
+  // Android-specific recognizer intent options
+  androidIntentOptions: {
+    EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 10000,
+    EXTRA_MASK_OFFENSIVE_WORDS: false,
+  },
+  // Use a specific Android recognition service
+  androidRecognitionServicePackage: "com.google.android.tts",
+  // iOS task hint
+  iosTaskHint: "unspecified", // "unspecified" | "dictation" | "search" | "confirmation"
+  // iOS audio session configuration
+  iosCategory: {
+    category: "playAndRecord",
+    categoryOptions: ["defaultToSpeaker", "allowBluetooth"],
+    mode: "measurement",
+  },
+  // Prevent microphone feedback from speakers (iOS only)
+  iosVoiceProcessingEnabled: true,
+  // Audio recording options (Android 13+ and iOS only)
+  recordingOptions: {
+    persist: false,
+    outputDirectory: undefined,
+    outputFileName: "recording.wav",
+    outputSampleRate: undefined,
+    outputEncoding: undefined,
+  },
+  // File-based transcription instead of microphone
+  audioSource: {
+    uri: undefined,
+    audioChannels: 1,
+    audioEncoding: AudioEncodingAndroid.ENCODING_PCM_16BIT,
+    sampleRate: 16000,
+    chunkDelayMillis: undefined,
+  },
+  // Volume change event settings
+  volumeChangeEventOptions: {
+    enabled: false,
+    intervalMillis: 300,
+  },
+});
+
+// Stop capturing audio (emits a final result if available)
+ExpoSpeechRecognitionModule.stop();
+
+// Immediately cancel without processing a final result
+ExpoSpeechRecognitionModule.abort();
+```

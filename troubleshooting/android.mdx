@@ -1,0 +1,217 @@
+---
+title: "Troubleshooting Android speech recognition problems"
+description: "Fix Android speech recognition problems including missing services, single-word recognition, on-device model setup, and continuous mode on older Android."
+---
+
+Android speech recognition issues typically fall into one of a few categories: a missing or disabled recognition service, a locale that has no offline model installed, or platform version limitations that affect which features are available. The sections below walk through each common problem, how to diagnose it, and the recommended fix.
+
+<AccordionGroup>
+
+<Accordion title="Single words, letters, or characters not recognized">
+
+Short utterances — single letters, digits, or brief words like "yes" or "no" — are often ignored or silently dropped because the default `free_form` language model is optimized for longer phrases.
+
+**For Android**, Google recommends switching to the `web_search` language model, which is tuned for short, precise queries:
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  androidIntentOptions: {
+    EXTRA_LANGUAGE_MODEL: "web_search",
+  },
+});
+```
+
+**For iOS**, set `iosTaskHint` to `"confirmation"` to signal that you expect brief responses:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  iosTaskHint: "confirmation",
+});
+```
+
+**On both platforms**, you can also try enabling on-device recognition — it tends to handle single-word prompts more reliably than network-based recognition on Android:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  requiresOnDeviceRecognition: true,
+  androidIntentOptions: {
+    EXTRA_LANGUAGE_MODEL: "web_search",
+  },
+});
+```
+
+**Alternatively**, record the audio and send it to an external service for processing. See [Persisting audio recordings](/guides/audio-recording) for setup instructions.
+
+<Note>
+  Some external services (including the Google Speech API) require an audio file of at least 3 seconds in duration before they will return results for short utterances.
+</Note>
+
+</Accordion>
+
+<Accordion title="Speech recognition unavailable, not supported, or hanging">
+
+If `isRecognitionAvailable()` returns `false`, or if starting recognition hangs without firing any events, the device is missing or has disabled the required speech recognition service.
+
+**Android 13 and above** require the [Speech Recognition & Synthesis](https://play.google.com/store/apps/details?id=com.google.android.tts) package (`com.google.android.tts`) to be installed and enabled.
+
+**Android 12 and below** require the [Google app](https://play.google.com/store/apps/details?id=com.google.android.googlequicksearchbox) (`com.google.android.googlequicksearchbox`) to be installed and enabled.
+
+<Warning>
+  If a package was recently re-enabled after being disabled, the device may need to be restarted before the change takes effect.
+</Warning>
+
+Use the following utility to inspect which services are registered on the device and which one is currently the default:
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+// Lists all speech recognition services visible to your app
+const services = ExpoSpeechRecognitionModule.getSpeechRecognitionServices();
+console.log("Available services:", services);
+// e.g. ["com.google.android.as", "com.google.android.tts", "com.samsung.android.bixby.agent"]
+
+// Returns the service that will be used when no explicit package is specified
+const defaultService = ExpoSpeechRecognitionModule.getDefaultRecognitionService();
+console.log("Default service:", defaultService.packageName);
+// e.g. "com.google.android.tts" on Android 13+
+// e.g. "com.google.android.googlequicksearchbox" on Android 12 and below
+```
+
+<Note>
+  `getSpeechRecognitionServices()` only returns services that are listed under `androidSpeechServicePackages` in your `app.json`, as well as services listed in the `forceQueryable` section when running `adb shell dumpsys package queries`. If you expect a service to appear but it does not, add its package name to `androidSpeechServicePackages` in your plugin config.
+</Note>
+
+</Accordion>
+
+<Accordion title="On-device recognition not working">
+
+On-device recognition requires a downloaded speech model for the target locale. Without it, recognition will start and then immediately end with a `no-speech` error or produce no results.
+
+**Android 12 emulator:** on-device recognition is unlikely to work. Expect a `no-speech` error and use network-based recognition instead.
+
+**Android 13 and above:** check which locales have models installed before enabling `requiresOnDeviceRecognition`:
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result = await ExpoSpeechRecognitionModule.getSupportedLocales({
+  androidRecognitionServicePackage: "com.google.android.as",
+});
+
+console.log("All supported locales:", result.locales);
+console.log("Installed (on-device) locales:", result.installedLocales);
+// installedLocales is often empty on a fresh device
+```
+
+If `installedLocales` is empty or does not contain the locale you need, trigger a model download:
+
+```tsx
+ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload({
+  locale: "en-US",
+})
+  .then((result) => {
+    switch (result.status) {
+      case "opened_dialog":
+        // Android 13: the system download dialog was opened
+        console.log("Model download dialog opened.");
+        break;
+      case "download_success":
+        // Android 14+: model downloaded successfully
+        console.log("Model downloaded.");
+        break;
+      case "download_canceled":
+        // Android 14+: user canceled the download
+        console.log("Download canceled.");
+        break;
+    }
+  })
+  .catch((err) => {
+    console.error("Download failed:", err.message);
+  });
+```
+
+If a model appears to be installed but on-device recognition still does not work, verify directly on the device:
+
+**Settings → Security and privacy → More privacy settings → Android System Intelligence → On-device speech recognition**
+
+</Accordion>
+
+<Accordion title="Beep sound when starting or stopping recognition">
+
+A hardcoded beep plays when Android's `SpeechRecognizer` starts and stops. This is a platform-level behavior and cannot be disabled through the standard API. However, it only occurs when the default microphone source is used — you can suppress it by switching to a custom microphone source.
+
+Both of the following options set `EXTRA_AUDIO_SOURCE` internally, which bypasses the beep:
+
+**Option 1 — enable continuous mode:**
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  continuous: true,
+});
+```
+
+**Option 2 — enable recording persistence:**
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  recordingOptions: {
+    persist: true,
+  },
+});
+```
+
+<Note>
+  This workaround only applies to Android 13 and above. Android 12 and below do not exhibit this beep behavior.
+</Note>
+
+If you use continuous mode but still want recognition to behave like non-continuous mode (i.e. stop after the first final result), listen for a `result` event with `isFinal: true` and call `abort()` immediately:
+
+```tsx
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("result", (event) => {
+  if (event.isFinal) {
+    // Process the final transcript
+    console.log("Final result:", event.results[0]?.transcript);
+    // Stop recognition without triggering the beep
+    ExpoSpeechRecognitionModule.abort();
+  }
+});
+
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  continuous: true,
+});
+```
+
+</Accordion>
+
+<Accordion title="Continuous mode not working on Android 12">
+
+Continuous recognition (`continuous: true`) is not supported on Android 12 (API level 32) and below. Attempting to use it has no effect — the session will behave as non-continuous.
+
+**Workaround:** use non-continuous mode on Android 12 and below. You can detect the Android version at runtime and adjust accordingly:
+
+```tsx
+import { Platform } from "react-native";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const isAndroid12OrBelow =
+  Platform.OS === "android" && Platform.Version <= 32;
+
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  continuous: !isAndroid12OrBelow,
+});
+```
+
+</Accordion>
+
+</AccordionGroup>

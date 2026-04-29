@@ -1,0 +1,107 @@
+---
+title: "Install expo-speech-recognition and configure the plugin"
+description: "Step-by-step guide to install expo-speech-recognition, configure the Expo config plugin, and rebuild native projects for Android and iOS."
+---
+
+This page walks you through installing the `expo-speech-recognition` package, wiring up the Expo config plugin, and regenerating the native Android and iOS projects so the required permissions and manifest entries are in place before you write any recognition code.
+
+<Note>
+  expo-speech-recognition requires a **development build**. It will not work in Expo Go because it depends on native modules that are not bundled with Expo Go. If your project does not yet have `android/` and `ios/` directories, Step 3 will create them for you.
+</Note>
+
+<Steps>
+  <Step title="Install the package">
+    Add `expo-speech-recognition` to your project using your preferred package manager.
+
+    <CodeGroup>
+
+    ```bash npm
+    npm install expo-speech-recognition
+    ```
+
+    ```bash yarn
+    yarn add expo-speech-recognition
+    ```
+
+    ```bash pnpm
+    pnpm add expo-speech-recognition
+    ```
+
+    </CodeGroup>
+
+    **Older Expo SDK versions**
+
+    If you are on an older SDK, install the matching release tag instead:
+
+    ```bash
+    # Expo SDK 51
+    npm install expo-speech-recognition@sdk-51
+
+    # Expo SDK 50
+    npm install expo-speech-recognition@sdk-50
+    ```
+  </Step>
+
+  <Step title="Configure the Expo config plugin">
+    Add `expo-speech-recognition` to the `plugins` array in your `app.json` (or `app.config.js`). The config plugin handles all native configuration automatically — you do not need to edit `AndroidManifest.xml` or `Info.plist` by hand.
+
+    ```json app.json
+    {
+      "expo": {
+        "plugins": [
+          [
+            "expo-speech-recognition",
+            {
+              "microphonePermission": "Allow $(PRODUCT_NAME) to use the microphone.",
+              "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to use speech recognition.",
+              "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+            }
+          ]
+        ]
+      }
+    }
+    ```
+
+    If you do not need to customise the permission strings, the shorter form (available from v0.2.22+) also works:
+
+    ```json app.json
+    {
+      "expo": {
+        "plugins": ["expo-speech-recognition"]
+      }
+    }
+    ```
+
+    <Warning>
+      The config plugin updates the Android `AndroidManifest.xml` to add package visibility filtering for `com.google.android.googlequicksearchbox` (Google's Speech Recognition service). Without this entry, Android 11+ package visibility rules will prevent your app from querying the recognition service and speech recognition will silently fail.
+
+      Use `androidSpeechServicePackages` to add any additional speech service packages that do not appear under the `forceQueryable` section when running `adb shell dumpsys package queries` on your device.
+    </Warning>
+
+    | Config option | Platform | Description |
+    |---|---|---|
+    | `microphonePermission` | iOS | The `NSMicrophoneUsageDescription` string shown in the system permission dialog. |
+    | `speechRecognitionPermission` | iOS | The `NSSpeechRecognitionUsageDescription` string shown in the system permission dialog. |
+    | `androidSpeechServicePackages` | Android | Additional package names to add to the manifest's `<queries>` block. |
+  </Step>
+
+  <Step title="Rebuild the native project">
+    After saving `app.json`, regenerate the native projects so the config plugin changes are applied. The following commands also launch the app on a connected device or emulator.
+
+    ```bash
+    # Android
+    npx expo run:android
+
+    # iOS
+    npx expo run:ios
+    ```
+
+    <Tip>
+      The Expo team recommends adding the generated `ios/` and `android/` directories to your `.gitignore` and relying on [Continuous Native Generation](https://docs.expo.dev/workflow/continuous-native-generation/) so your native projects are always derived from `app.json` and package versions. This makes upgrades and CI straightforward.
+    </Tip>
+
+    If you are building for distribution, run `npx expo prebuild` to generate the native projects without launching the app, then build with EAS Build or your own native toolchain.
+  </Step>
+</Steps>
+
+Once the native projects are rebuilt, continue to [Quickstart](/quickstart) to write your first speech recognition component.

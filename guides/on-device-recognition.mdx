@@ -1,0 +1,177 @@
+---
+title: "On-device speech recognition without network access"
+description: "Use requiresOnDeviceRecognition to process audio locally on the device with no network required, with offline model management for Android."
+---
+
+On-device recognition processes speech entirely on the device without sending audio to a remote server. This is useful when network access is unavailable, when you need lower latency, when processing sensitive audio that should not leave the device, or when you want to avoid server-based quotas and rate limiting. It also unlocks additional features on Android 14+ such as punctuation, language detection, and word-level confidence and timing.
+
+## Checking availability
+
+Before enabling `requiresOnDeviceRecognition`, verify that the device supports it:
+
+```tsx
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const supported = ExpoSpeechRecognitionModule.supportsOnDeviceRecognition();
+console.log("On-device recognition supported:", supported);
+```
+
+## Starting with on-device recognition
+
+Pass `requiresOnDeviceRecognition: true` to `start()`:
+
+```tsx
+ExpoSpeechRecognitionModule.start({
+  lang: "en-US",
+  requiresOnDeviceRecognition: true,
+});
+```
+
+If the language model is not installed, `start()` will emit an `error` event with the code `language-not-supported` (Android) or `service-not-allowed` (iOS).
+
+## Platform details
+
+### Android
+
+<Warning>
+  On-device recognition is **not supported on Android 12 or below**. Calling `start()` with `requiresOnDeviceRecognition: true` on those devices will emit a `no-speech` error.
+</Warning>
+
+On Android 13+, on-device recognition requires the offline language model for the target locale to be downloaded to the device. Use `getSupportedLocales()` to check which models are installed and `androidTriggerOfflineModelDownload()` to download missing ones.
+
+#### Checking installed locales
+
+```tsx
+ExpoSpeechRecognitionModule.getSupportedLocales({
+  // Use "com.google.android.as" to get on-device locales
+  androidRecognitionServicePackage: "com.google.android.as",
+}).then((result) => {
+  console.log("All supported locales:", result.locales);
+  console.log("Installed (offline) locales:", result.installedLocales);
+});
+```
+
+#### Downloading a language model
+
+Use `androidTriggerOfflineModelDownload()` to download an offline model for a specific locale.
+
+- **Android 13** — opens a system dialog prompting the user to download. Returns `"opened_dialog"`.
+- **Android 14+** — downloads the model programmatically in the background. Returns `"download_success"` on completion or `"download_canceled"` if the user cancels.
+
+```tsx
+ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload({
+  locale: "en-US",
+})
+  .then((result) => {
+    switch (result.status) {
+      case "opened_dialog":
+        // Android 13: dialog was shown to the user
+        console.log("Model download dialog opened.");
+        break;
+      case "download_success":
+        // Android 14+: model downloaded successfully
+        console.log("Model downloaded successfully.");
+        break;
+      case "download_canceled":
+        // Android 14+: user canceled the download
+        console.log("Model download was canceled.");
+        break;
+    }
+  })
+  .catch((err) => {
+    console.error("Failed to download model:", err.message);
+  });
+```
+
+<Note>
+  After a successful download, call `getSupportedLocales()` again to confirm the locale now appears in `installedLocales`.
+</Note>
+
+You can also navigate to the on-device models list manually: **Settings → Security and privacy → More privacy settings → Android System Intelligence → On-device speech recognition**.
+
+### iOS
+
+On-device recognition is supported on **iOS 17 and later**. When using on-device recognition on iOS, you only need microphone permission — the speech recognizer permission is not required because audio is not sent to Apple's servers.
+
+```tsx
+import { Platform } from "react-native";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+async function requestPermissions() {
+  if (Platform.OS === "ios") {
+    // Microphone permission is sufficient for on-device recognition
+    const result =
+      await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+    return result.granted;
+  }
+  // Android only needs RECORD_AUDIO (microphone)
+  const result =
+    await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+  return result.granted;
+}
+```
+
+## Full example
+
+The example below checks availability, downloads a model if needed, and starts on-device recognition.
+
+```tsx
+import { useState } from "react";
+import { Button, Text, View, Platform } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+const LOCALE = "en-US";
+
+function OnDeviceRecognitionExample() {
+  const [transcript, setTranscript] = useState("");
+  const [status, setStatus] = useState("");
+
+  useSpeechRecognitionEvent("result", (ev) => {
+    setTranscript(ev.results[0]?.transcript ?? "");
+  });
+
+  const ensureModelAndStart = async () => {
+    if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()) {
+      setStatus("On-device recognition not supported on this device.");
+      return;
+    }
+
+    // Android: check if the model is already installed
+    if (Platform.OS === "android") {
+      const { installedLocales } =
+        await ExpoSpeechRecognitionModule.getSupportedLocales({
+          androidRecognitionServicePackage: "com.google.android.as",
+        });
+
+      if (!installedLocales.includes(LOCALE)) {
+        setStatus("Downloading language model...");
+        const result =
+          await ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload({
+            locale: LOCALE,
+          });
+        if (result.status === "download_canceled") {
+          setStatus("Download canceled.");
+          return;
+        }
+        setStatus("Model ready.");
+      }
+    }
+
+    ExpoSpeechRecognitionModule.start({
+      lang: LOCALE,
+      requiresOnDeviceRecognition: true,
+    });
+  };
+
+  return (
+    <View>
+      <Button title="Start on-device recognition" onPress={ensureModelAndStart} />
+      {status ? <Text>{status}</Text> : null}
+      <Text>{transcript}</Text>
+    </View>
+  );
+}
+```

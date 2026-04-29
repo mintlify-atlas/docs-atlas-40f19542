@@ -1,133 +1,87 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "expo-speech-recognition: Cross-platform Speech Recognition"
+description: "Add speech recognition to your React Native Expo app. Implements the Web Speech API on iOS (SFSpeechRecognizer), Android (SpeechRecognizer), and Web."
 ---
 
-## Setting up
+expo-speech-recognition brings native speech recognition to React Native and Expo projects, implementing the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) on iOS, Android, and Web. Write one codebase and get real-time transcription, on-device recognition, audio recording, and full TypeScript support across all platforms.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install the package and configure the Expo config plugin for Android and iOS.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get speech recognition working in your app in under 5 minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="API Reference" icon="code" href="/api/module-methods">
+    Browse all module methods, events, and TypeScript types.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Platform Compatibility" icon="table" href="/guides/platform-compatibility">
+    See which features are supported on each platform and OS version.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can build
 
-Everything you need to create world-class documentation.
+expo-speech-recognition covers the full speech recognition lifecycle — from requesting permissions to streaming live transcripts and persisting audio recordings.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="React Hooks" icon="react" href="/usage/hooks">
+    Use `useSpeechRecognitionEvent` to subscribe to native recognition events with minimal boilerplate.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="On-Device Recognition" icon="microchip" href="/guides/on-device-recognition">
+    Keep audio on the device — no network required. Supports offline model download on Android.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Audio Recording" icon="microphone" href="/guides/audio-recording">
+    Persist recognized audio to a local file alongside live transcription.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="File Transcription" icon="file-audio" href="/guides/file-transcription">
+    Transcribe existing audio files without using the microphone.
   </Card>
-</Columns>
+  <Card title="Volume Metering" icon="waveform" href="/guides/volume-metering">
+    Get real-time volume levels to build animated voice indicators.
+  </Card>
+  <Card title="Web Polyfill" icon="globe" href="/usage/web-polyfill">
+    Polyfill the `SpeechRecognition` global for third-party libraries that use the Web Speech API.
+  </Card>
+</CardGroup>
 
-## Make your content agent ready
+## Quick look
 
-Make your docs work for humans and AI agents alike.
+```tsx quickstart.tsx
+import { useState } from "react";
+import { Button, Text, View } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
+export function SpeechDemo() {
+  const [transcript, setTranscript] = useState("");
 
-## Need inspiration?
+  useSpeechRecognitionEvent("result", (event) => {
+    setTranscript(event.results[0]?.transcript ?? "");
+  });
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+  const start = async () => {
+    const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!granted) return;
+    ExpoSpeechRecognitionModule.start({ lang: "en-US", interimResults: true });
+  };
+
+  return (
+    <View>
+      <Button title="Start Listening" onPress={start} />
+      <Text>{transcript}</Text>
+    </View>
+  );
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Troubleshooting Android" icon="android" href="/troubleshooting/android">
+    Fix common Android recognition issues, missing services, and on-device model setup.
+  </Card>
+  <Card title="Troubleshooting iOS" icon="apple" href="/troubleshooting/ios">
+    Resolve iOS audio session conflicts, permission issues, and Siri configuration.
+  </Card>
+</CardGroup>

@@ -1,0 +1,75 @@
+---
+title: "Platform compatibility for expo-speech-recognition"
+description: "Detailed feature support matrix for Android 12 through 14+, iOS 17+, Chrome, Safari, and other web browsers for expo-speech-recognition."
+---
+
+Not all speech recognition features are available on every platform or OS version. Before using a specific capability, check the tables below to confirm it is supported in your target environment. Features marked with `*` have additional conditions noted in the footnotes.
+
+<Note>
+  Compatibility data as of July 2025.
+</Note>
+
+## Mobile platforms (React Native)
+
+| Feature | Android 12- | Android 13 | Android 14+ | iOS 17+ |
+|---------|:-----------:|:----------:|:-----------:|:-------:|
+| Basic speech recognition | ✅ | ✅ | ✅ | ✅ |
+| Continuous recognition | ❌ | ✅ | ✅ | ✅ |
+| Interim results | ✅ | ✅ | ✅ | ✅ |
+| On-device recognition | ❌ | ✅ | ✅ | ✅ |
+| Audio recording | ❌ | ✅ | ✅ | ✅ |
+| Audio file transcription | ❌ | ✅ | ✅ | ✅ |
+| Volume metering | ✅ | ✅ | ✅ | ✅ |
+| Voice processing | ❌ | ❌ | ❌ | ✅ |
+| Contextual strings | ✅ | ✅ | ✅ | ✅ |
+| Punctuation (`addsPunctuation`) | ❌ | ✅ \* | ✅ \* | ✅ |
+| Language detection | ❌ | ❌ | ✅ \* | ❌ |
+| Word confidence & timing | ❌ | ❌ | ✅ \* | ✅ |
+| Offensive word masking | ❌ | ✅ | ✅ | ❌ |
+
+**\*** Android: only with on-device recognition (i.e. `requiresOnDeviceRecognition: true` or using the `com.google.android.as` service package).
+
+### Notes by feature
+
+- **Continuous recognition** — Android 12 and below do not support the `continuous` option. On those devices it is ignored.
+- **On-device recognition** — requires an offline language model to be downloaded on Android 13+. See [On-device recognition](/guides/on-device-recognition).
+- **Audio recording** — saves microphone input to a local WAV file. Requires Android 13+. See [Audio recording](/guides/audio-recording).
+- **Audio file transcription** — transcribes a local file instead of the microphone. Requires Android 13+. See [File transcription](/guides/file-transcription).
+- **Voice processing** (`iosVoiceProcessingEnabled`) — iOS only. Adds signal processing to reduce microphone feedback from speakers. May lower speaker playback volume.
+- **Contextual strings** — biases the recognizer toward custom vocabulary. Works on both platforms but performs more reliably on iOS.
+- **Punctuation** — on Android 13+, only available with on-device recognition. Controlled by `addsPunctuation` (maps to `EXTRA_ENABLE_FORMATTING` on Android).
+- **Language detection** — Android 14+ only, requires the `com.google.android.as` service and `EXTRA_ENABLE_LANGUAGE_DETECTION`. See [Language detection](/guides/language-detection).
+- **Word confidence & timing** — per-word timestamps and confidence scores from the `segments` field in the `result` event. On Android, only available on Android 14+ with on-device recognition.
+- **Offensive word masking** — Android 13+ only. Controlled by `androidIntentOptions.EXTRA_MASK_OFFENSIVE_WORDS`.
+
+## Web platforms
+
+| Platform | Supported | Default engine |
+|----------|:---------:|----------------|
+| Android (React Native) | ✅ | Google |
+| iOS (React Native) | ✅ | Siri |
+| Chrome Desktop | ✅ | Google (server-based) |
+| Safari Desktop ≥ v16 | ✅ | Siri |
+| Chrome on Android | ✅ | Google |
+| Chrome on iOS | ❌ | — |
+| Edge on Windows | unknown | Azure |
+| Edge on Mac ARM | ❌ | Azure |
+| Brave Desktop | ❌ | — |
+| Firefox Desktop | ❌ | — |
+
+### Notes by platform
+
+- **Android (React Native)** — continuous mode and audio recording are only available on Android 13+. The recognition engine can be changed via `androidRecognitionServicePackage`.
+- **iOS (React Native)** — uses Siri and `SFSpeechRecognizer` natively.
+- **Chrome Desktop** — implemented via the `webkitSpeechRecognition` prefix. Uses Google's server-based recognition.
+- **Safari Desktop ≥ v16** — implemented via the `webkitSpeechRecognition` prefix. Requires Siri to be enabled in macOS system settings.
+- **Chrome on Android** — supported, but results handling differs slightly from Chrome Desktop.
+- **Chrome on iOS** — not working as of the last test in 2023.
+- **Edge on Windows** — `SpeechRecognition` API is present but requires the Azure speech component. Verify it is installed at `edge://components`.
+- **Edge on Mac ARM** — `SpeechRecognition` API is present but the Azure speech component is not available.
+- **Brave Desktop** — as of July 2025, Brave is waiting for improvements to the Web Speech API for on-device recognition and does not ship a server-based fallback.
+- **Firefox Desktop** — no `SpeechRecognition` implementation.
+
+<Tip>
+  When targeting the web, use `isRecognitionAvailable()` at runtime to check whether the current browser has a working `SpeechRecognition` implementation. Note that some browsers (such as Brave) expose the API object but do not implement it, so runtime detection alone may not be sufficient — consider cross-referencing with a user-agent check for those edge cases.
+</Tip>

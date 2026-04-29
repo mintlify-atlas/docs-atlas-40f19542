@@ -1,0 +1,106 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "expo-speech-recognition",
+  "projectDescription": "A cross-platform Speech Recognition library for React Native Expo projects, implementing the Web Speech API on iOS (SFSpeechRecognizer), Android (SpeechRecognizer), and Web.",
+  "theme": "luma",
+  "primaryColor": "#848c8e",
+  "lightColor": "#11161e",
+  "darkColor": "#cfd0d2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "usage/hooks",
+              "usage/permissions",
+              "usage/direct-api",
+              "usage/web-polyfill"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/audio-recording",
+              "guides/file-transcription",
+              "guides/volume-metering",
+              "guides/language-detection",
+              "guides/on-device-recognition",
+              "guides/platform-compatibility"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/android",
+              "troubleshooting/ios",
+              "troubleshooting/common-issues"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Module",
+            "pages": [
+              "api/module-methods",
+              "api/events",
+              "api/types"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Cross-platform speech recognition for iOS, Android, and Web",
+    "Web Speech API compatibility with polyfill support",
+    "React hooks API (useSpeechRecognitionEvent)",
+    "Continuous and interim results recognition",
+    "On-device recognition support (no network required)",
+    "Audio recording and file transcription",
+    "Volume metering with real-time events",
+    "Language detection (Android 14+ with on-device recognition)",
+    "Contextual strings for improved accuracy",
+    "Full TypeScript support"
+  ],
+  "publicApiSurface": [
+    "ExpoSpeechRecognitionModule.start(options)",
+    "ExpoSpeechRecognitionModule.stop()",
+    "ExpoSpeechRecognitionModule.abort()",
+    "ExpoSpeechRecognitionModule.requestPermissionsAsync()",
+    "ExpoSpeechRecognitionModule.getPermissionsAsync()",
+    "ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync()",
+    "ExpoSpeechRecognitionModule.getMicrophonePermissionsAsync()",
+    "ExpoSpeechRecognitionModule.requestSpeechRecognizerPermissionsAsync()",
+    "ExpoSpeechRecognitionModule.getSpeechRecognizerPermissionsAsync()",
+    "ExpoSpeechRecognitionModule.getStateAsync()",
+    "ExpoSpeechRecognitionModule.getSupportedLocales()",
+    "ExpoSpeechRecognitionModule.getSpeechRecognitionServices()",
+    "ExpoSpeechRecognitionModule.getDefaultRecognitionService()",
+    "ExpoSpeechRecognitionModule.getAssistantService()",
+    "ExpoSpeechRecognitionModule.isRecognitionAvailable()",
+    "ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()",
+    "ExpoSpeechRecognitionModule.supportsRecording()",
+    "ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload()",
+    "ExpoSpeechRecognitionModule.setCategoryIOS()",
+    "ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS()",
+    "ExpoSpeechRecognitionModule.setAudioSessionActiveIOS()",
+    "useSpeechRecognitionEvent(event, handler)",
+    "ExpoWebSpeechRecognition",
+    "ExpoWebSpeechGrammar",
+    "ExpoWebSpeechGrammarList"
+  ]
+}

@@ -1,0 +1,214 @@
+---
+title: "Requesting microphone and speech recognition permissions"
+description: "How to request and check microphone and speech recognition permissions on iOS and Android before starting speech recognition in your app."
+---
+
+Speech recognition on mobile requires two distinct permissions: access to the microphone and, on iOS when using network-based recognition, authorization for the speech recognizer service itself. Without these permissions the recognition engine will refuse to start, emitting an `error` event with the code `not-allowed`. Requesting permissions before calling `start()` gives you control over when the system dialog appears and lets you gracefully handle denial.
+
+## Permission functions overview
+
+<CardGroup cols={2}>
+  <Card title="requestPermissionsAsync" icon="shield-check">
+    Requests both microphone and speech recognition permissions at once. The recommended starting point for most apps.
+  </Card>
+  <Card title="getPermissionsAsync" icon="eye">
+    Returns the current combined permission status without showing a dialog.
+  </Card>
+  <Card title="requestMicrophonePermissionsAsync" icon="microphone">
+    Requests only microphone permission. Use this when on-device recognition is enabled on iOS.
+  </Card>
+  <Card title="getMicrophonePermissionsAsync" icon="microphone-slash">
+    Returns the current microphone-only permission status.
+  </Card>
+  <Card title="requestSpeechRecognizerPermissionsAsync" icon="waveform">
+    iOS only. Requests authorization for network-based speech recognition.
+  </Card>
+  <Card title="getSpeechRecognizerPermissionsAsync" icon="circle-info">
+    iOS only. Returns the current speech recognizer authorization status.
+  </Card>
+</CardGroup>
+
+## Permission response fields
+
+All permission functions return an object with the following shape:
+
+<ParamField path="status" type="string">
+  The current permission status: `"granted"`, `"denied"`, or `"not-determined"`.
+</ParamField>
+
+<ParamField path="granted" type="boolean">
+  `true` when the user has granted the requested permission.
+</ParamField>
+
+<ParamField path="canAskAgain" type="boolean">
+  `true` if the app may present the permission dialog again. On iOS, once a user denies a permission, this becomes `false` and the only way to change it is through the device Settings app.
+</ParamField>
+
+<ParamField path="expires" type="string | number">
+  When the permission expires. Usually `"never"` for microphone and speech recognition permissions.
+</ParamField>
+
+<ParamField path="restricted" type="boolean">
+  iOS only. `true` when the permission is restricted by Content & Privacy Restrictions or an MDM profile. When restricted, the user cannot grant access even from the Settings app.
+</ParamField>
+
+## requestPermissionsAsync
+
+Presents a dialog requesting both microphone access and (on iOS) speech recognition authorization in a single call. On Android, only `RECORD_AUDIO` is requested since there is no separate speech recognition permission.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+
+console.log("Status:", result.status);       // "granted" | "denied" | "not-determined"
+console.log("Granted:", result.granted);     // true | false
+console.log("Restricted:", result.restricted); // true | false | undefined (iOS only)
+console.log("Can ask again:", result.canAskAgain);
+console.log("Expires:", result.expires);
+```
+
+<Warning>
+  On iOS, once a user responds to the permission dialog, the `canAskAgain` field becomes `false`. Further changes must be made by the user in the device Settings app. Design your UX to explain why the permission is needed before showing the dialog.
+</Warning>
+
+## getPermissionsAsync
+
+Returns the current combined permission status without presenting a dialog. Use this on app start to check whether you still need to request permissions.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+
+if (result.granted) {
+  // Permissions already granted — safe to start recognition
+} else if (result.canAskAgain) {
+  // Show rationale UI, then call requestPermissionsAsync()
+} else {
+  // Permission denied and cannot ask again — direct user to Settings
+}
+```
+
+## requestMicrophonePermissionsAsync
+
+Requests only microphone access, without triggering the iOS speech recognizer dialog. This is the right choice when you're using on-device recognition on iOS, which does not require network authorization.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result = await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+
+console.log("Status:", result.status);
+console.log("Granted:", result.granted);
+console.log("Can ask again:", result.canAskAgain);
+console.log("Expires:", result.expires);
+```
+
+<Note>
+  On iOS with on-device recognition enabled (`requiresOnDeviceRecognition: true`), microphone permission is the only permission required. Network-based recognition also needs speech recognizer authorization — use `requestPermissionsAsync()` or `requestSpeechRecognizerPermissionsAsync()` in that case.
+</Note>
+
+## getMicrophonePermissionsAsync
+
+Returns the current microphone permission status. On Android this checks `RECORD_AUDIO`; on iOS it checks `AVAudioSession.RecordPermission`.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result = await ExpoSpeechRecognitionModule.getMicrophonePermissionsAsync();
+
+console.log("Status:", result.status);
+console.log("Granted:", result.granted);
+```
+
+## requestSpeechRecognizerPermissionsAsync
+
+iOS only. Requests `SFSpeechRecognizer` authorization, which is required when voice data will be sent to Apple's servers for transcription (i.e. when `requiresOnDeviceRecognition` is `false`). Calling this on Android has no effect.
+
+```ts
+import { Platform } from "react-native";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const requiresOnDeviceRecognition = false;
+
+// Only needed for network-based recognition on iOS
+if (!requiresOnDeviceRecognition && Platform.OS === "ios") {
+  const result =
+    await ExpoSpeechRecognitionModule.requestSpeechRecognizerPermissionsAsync();
+
+  console.log("Status:", result.status);
+  console.log("Granted:", result.granted);
+  console.log("Restricted:", result.restricted);
+  console.log("Can ask again:", result.canAskAgain);
+}
+```
+
+## getSpeechRecognizerPermissionsAsync
+
+iOS only. Returns the current `SFSpeechRecognizer` authorization status without showing a dialog.
+
+```ts
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+const result =
+  await ExpoSpeechRecognitionModule.getSpeechRecognizerPermissionsAsync();
+
+console.log("Status:", result.status);
+console.log("Granted:", result.granted);
+console.log("Restricted:", result.restricted);
+```
+
+## Practical permission pattern
+
+The following pattern checks permissions on demand (when the user taps "Start") rather than at app launch, which aligns with platform guidelines for explaining context before the dialog appears.
+
+```tsx
+import { useState } from "react";
+import { Alert, Button } from "react-native";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+function SpeechButton() {
+  const [recognizing, setRecognizing] = useState(false);
+
+  const handleStart = async () => {
+    // Check current status first to avoid unnecessary dialogs
+    const current = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+
+    if (!current.granted) {
+      if (!current.canAskAgain) {
+        Alert.alert(
+          "Permission required",
+          "Open Settings to allow microphone and speech recognition access.",
+        );
+        return;
+      }
+
+      const requested =
+        await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!requested.granted) {
+        return;
+      }
+    }
+
+    ExpoSpeechRecognitionModule.start({ lang: "en-US" });
+    setRecognizing(true);
+  };
+
+  return <Button title={recognizing ? "Listening…" : "Start"} onPress={handleStart} />;
+}
+```
+
+## What happens without permissions
+
+If `start()` is called before permissions are granted — or if the user revokes permissions while the app is running — the module emits an `error` event with the code `not-allowed`. No audio will be captured.
+
+```tsx
+import { useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+useSpeechRecognitionEvent("error", (event) => {
+  if (event.error === "not-allowed") {
+    // Permissions were denied — show a prompt to open Settings
+  }
+});
+```

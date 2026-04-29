@@ -1,0 +1,194 @@
+---
+title: "Polyfilling the Web SpeechRecognition API on React Native"
+description: "Use ExpoWebSpeechRecognition to polyfill the SpeechRecognition global for third-party libraries that depend on the Web Speech API."
+---
+
+Some third-party libraries — voice assistants, transcription widgets, web-ported code — depend on the browser's `SpeechRecognition` or `webkitSpeechRecognition` global. `ExpoWebSpeechRecognition` is a compatibility wrapper around the native module that implements the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) interface, allowing those libraries to work on iOS and Android without modification.
+
+<Note>
+  If you are building with `expo-speech-recognition` directly — not integrating a third-party library — use the [Direct Module API](/usage/direct-api) or the [React hooks](/usage/hooks) instead. The polyfill adds a translation layer that is only useful when you need Web Speech API compatibility.
+</Note>
+
+## Setting up the polyfill
+
+Assign `ExpoWebSpeechRecognition` to the global `SpeechRecognition` and `webkitSpeechRecognition` symbols that third-party libraries expect. Do this once, early in your app's entry point.
+
+```ts
+import { ExpoWebSpeechRecognition } from "expo-speech-recognition";
+
+// Polyfill both variants so libraries that check either one will work
+webkitSpeechRecognition = ExpoWebSpeechRecognition;
+SpeechRecognition = ExpoWebSpeechRecognition;
+```
+
+### TypeScript typings
+
+If you need the standard Web Speech API types in TypeScript, install the community type package:
+
+```bash
+npm install -D @types/dom-speech-recognition
+```
+
+Then import the types in any file that uses `SpeechRecognition` globals:
+
+```ts
+import "dom-speech-recognition";
+```
+
+## Standard Web Speech API properties
+
+`ExpoWebSpeechRecognition` supports the standard properties defined by the Web Speech API spec:
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `lang` | `string` | `"en-US"` | BCP-47 language tag for recognition. |
+| `interimResults` | `boolean` | `false` | Return partial results as they become available. |
+| `maxAlternatives` | `number` | `1` | Maximum number of alternative transcriptions per result. |
+| `continuous` | `boolean` | `false` | Keep recognizing after the first final result. |
+| `grammars` | `SpeechGrammarList` | `ExpoWebSpeechGrammarList` | Grammar list (polyfill class, not enforced on all platforms). |
+
+<Warning>
+  The `grammars` property is a polyfill stub. Grammar enforcement is not supported on iOS or Android — the `ExpoWebSpeechGrammarList` class parses grammar strings but they have no effect on recognition results.
+</Warning>
+
+## Extended (non-web) properties
+
+`ExpoWebSpeechRecognition` exposes additional properties beyond the Web Speech API spec to give access to native capabilities:
+
+| Property | Type | Description |
+|---|---|---|
+| `contextualStrings` | `string[]` | Custom vocabulary hints to bias the recognizer. |
+| `requiresOnDeviceRecognition` | `boolean` | Prevent audio from being sent over the network. |
+| `addsPunctuation` | `boolean` | Include punctuation in transcription results. |
+| `androidIntentOptions` | `object` | Extra options for the Android `RecognizerIntent`. |
+| `androidRecognitionServicePackage` | `string` | Android recognition service package name. |
+| `androidIntent` | `string` | Android intent action for recognition. |
+| `iosTaskHint` | `string` | iOS task hint: `"unspecified"`, `"dictation"`, `"search"`, `"confirmation"`. |
+| `iosCategory` | `object` | iOS `AVAudioSession` category, options, and mode. |
+| `audioSource` | `object` | Transcribe from a local audio file instead of the microphone. |
+| `recordingOptions` | `object` | Options for persisting captured audio to a file. |
+
+## Event handlers
+
+Assign event handlers directly to the `on*` properties (overwriting any previous handler) or use `registerEventListener` to add multiple listeners for the same event.
+
+### on* properties
+
+```ts
+recognition.onstart = (event) => console.log("started!");
+recognition.onend = (event) => console.log("ended!");
+recognition.onerror = (event) => {
+  console.log("error code:", event.error, "error message:", event.message);
+};
+recognition.onresult = (event) => {
+  // event.resultIndex points to the most recent result
+  // event.results[event.resultIndex][0] is the top alternative
+  const transcript = event.results[event.resultIndex][0].transcript;
+  const isFinal = event.results[event.resultIndex][0].isFinal;
+  console.log("result:", transcript, "final:", isFinal);
+};
+```
+
+### registerEventListener / removeEventListener
+
+Use `registerEventListener` to add multiple independent listeners for the same event. Each listener must be removed individually with `removeEventListener`.
+
+```ts
+const handleStart = (event: Event) => console.log("started!");
+recognition.registerEventListener("start", handleStart);
+
+// Remove when done
+recognition.removeEventListener("start", handleStart);
+```
+
+## Control methods
+
+```ts
+// Start recognition (also calls requestPermissionsAsync internally)
+recognition.start();
+
+// Stop capturing and return a final result
+recognition.stop();
+
+// Immediately cancel without returning a final result
+recognition.abort();
+```
+
+## Complete example
+
+The following example shows a full polyfill setup and usage pattern using the standard Web Speech API interface.
+
+```ts
+// Import type definitions for Web Speech API globals
+import "dom-speech-recognition";
+
+import { ExpoWebSpeechRecognition } from "expo-speech-recognition";
+
+// Polyfill the globals
+webkitSpeechRecognition = ExpoWebSpeechRecognition;
+SpeechRecognition = ExpoWebSpeechRecognition;
+
+// Create a recognition instance
+const recognition = new ExpoWebSpeechRecognition();
+
+// Standard Web Speech API properties
+recognition.lang = "en-US";
+recognition.interimResults = true;
+recognition.maxAlternatives = 1;
+recognition.continuous = true;
+
+// Extended native properties
+recognition.contextualStrings = ["Carlsen", "Nepomniachtchi", "Praggnanandhaa"];
+recognition.requiresOnDeviceRecognition = true;
+recognition.addsPunctuation = true;
+recognition.androidIntentOptions = {
+  EXTRA_LANGUAGE_MODEL: "web_search",
+};
+recognition.androidRecognitionServicePackage = "com.google.android.tts";
+
+// Assign event handlers (overwrites previous handlers)
+recognition.onstart = (event) => console.log("started!");
+recognition.onend = (event) => console.log("ended!");
+recognition.onresult = (event) => {
+  console.log(
+    "result:",
+    event.results[event.resultIndex][0].transcript,
+    "final:",
+    event.results[event.resultIndex][0].isFinal,
+  );
+};
+
+// Or register multiple listeners per event
+const handleStart = (event: Event) => console.log("started!");
+recognition.registerEventListener("start", handleStart);
+recognition.removeEventListener("start", handleStart); // remove when done
+
+const handleResult = (event: SpeechRecognitionEvent) => {
+  console.log("result:", event.results[event.resultIndex][0].transcript);
+};
+recognition.registerEventListener("result", handleResult);
+
+recognition.registerEventListener("error", (event) => {
+  console.log("error code:", event.error, "error message:", event.message);
+});
+
+recognition.registerEventListener("end", () => console.log("ended!"));
+
+// Start recognition
+recognition.start();
+
+// Stop recognition
+recognition.stop();
+
+// Cancel recognition
+recognition.abort();
+```
+
+## Differences from the Web Speech API
+
+`ExpoWebSpeechRecognition` is compatible with the Web Speech API but has some behavioral differences on mobile platforms:
+
+- **iOS interim results**: On iOS, final results are only available after recognition stops, even when `interimResults` is `true`.
+- **Continuous mode**: Not supported on Android 12 and below.
+- **grammars**: The `SpeechGrammarList` is a stub — grammar strings are accepted but have no effect on results.
+- **resultIndex**: Always `0` in the `result` event, because each native result event maps to a single result list entry.

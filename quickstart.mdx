@@ -1,81 +1,158 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Quickstart — First speech recognition in 5 minutes"
+description: "Learn how to build a working speech recognition component in React Native with expo-speech-recognition using hooks and the module API."
 ---
 
-## Get started in three steps
+In this quickstart you will build a minimal but fully working React Native component that requests microphone and speech recognition permissions, listens for spoken words, and displays the live transcript on screen. By the end you will have a solid foundation to explore more advanced features like continuous recognition, audio recording, and on-device transcription.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install and configure the library">
+    Follow the [installation guide](/installation) to add `expo-speech-recognition` to your project, configure the Expo config plugin in `app.json`, and rebuild the native projects:
 
-### Step 1: Set up your local environment
+    ```bash
+    npx expo run:android
+    # or
+    npx expo run:ios
+    ```
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Note>
+      expo-speech-recognition requires a development build — it will not run inside Expo Go.
+    </Note>
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Request permissions">
+    Before calling `start()`, ask the user for microphone and speech recognition permissions. Call `requestPermissionsAsync()` — it covers both the microphone (`RECORD_AUDIO` on Android) and the speech recognizer (`NSSpeechRecognitionUsageDescription` on iOS) in a single call.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```ts
+    import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    if (!result.granted) {
+      console.warn("Permissions not granted", result);
+      return;
+    }
 
-### Step 3: Go live
+    // Safe to call start() now
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    If the user denies permissions, any subsequent call to `start()` will fire an `error` event with the code `"not-allowed"`. You can check the current permission status at any time with `getPermissionsAsync()` without prompting the user again.
+  </Step>
+
+  <Step title="Subscribe to recognition events">
+    Use the `useSpeechRecognitionEvent` hook to register listeners for the events you care about. The hook automatically cleans up the listener when the component unmounts.
+
+    ```ts
+    import { useSpeechRecognitionEvent } from "expo-speech-recognition";
+
+    // Called when the recognizer has started and is ready for input
+    useSpeechRecognitionEvent("start", () => setRecognizing(true));
+
+    // Called when the session ends (always fires last, even after errors)
+    useSpeechRecognitionEvent("end", () => setRecognizing(false));
+
+    // Called whenever a partial or final result is available
+    useSpeechRecognitionEvent("result", (event) => {
+      setTranscript(event.results[0]?.transcript);
+    });
+
+    // Called when an error occurs
+    useSpeechRecognitionEvent("error", (event) => {
+      console.log("error code:", event.error, "error message:", event.message);
+    });
+    ```
+
+    The event names and `error` codes mirror the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) so the mental model is familiar if you have used browser-based speech recognition before.
+  </Step>
+
+  <Step title="Start and stop recognition">
+    Call `ExpoSpeechRecognitionModule.start()` with a `lang` option (BCP-47 locale tag) and any additional options you need. Call `stop()` to request a graceful end — the recognizer will attempt to return a final result before shutting down. Call `abort()` to cancel immediately without waiting for a result.
+
+    ```ts
+    import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+
+    // Start
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,  // receive partial results as the user speaks
+      continuous: false,     // stop after the first final result
+    });
+
+    // Stop gracefully (emits a final result if possible)
+    ExpoSpeechRecognitionModule.stop();
+
+    // Cancel immediately (no final result)
+    ExpoSpeechRecognitionModule.abort();
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+The component below combines all four steps into a working app. Copy it into a new file in your project and render it from your root component.
+
+```tsx
+import { useState } from "react";
+import { Button, ScrollView, Text, View } from "react-native";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+
+function App() {
+  const [recognizing, setRecognizing] = useState(false);
+  const [transcript, setTranscript] = useState("");
+
+  useSpeechRecognitionEvent("start", () => setRecognizing(true));
+  useSpeechRecognitionEvent("end", () => setRecognizing(false));
+  useSpeechRecognitionEvent("result", (event) => {
+    setTranscript(event.results[0]?.transcript);
+  });
+  useSpeechRecognitionEvent("error", (event) => {
+    console.log("error code:", event.error, "error message:", event.message);
+  });
+
+  const handleStart = async () => {
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      console.warn("Permissions not granted", result);
+      return;
+    }
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,
+      continuous: false,
+    });
+  };
+
+  return (
+    <View>
+      {!recognizing ? (
+        <Button title="Start" onPress={handleStart} />
+      ) : (
+        <Button
+          title="Stop"
+          onPress={() => ExpoSpeechRecognitionModule.stop()}
+        />
+      )}
+      <ScrollView>
+        <Text>{transcript}</Text>
+      </ScrollView>
+    </View>
+  );
+}
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Hooks reference" icon="fishing-rod" href="/usage/hooks">
+    Learn all the events you can subscribe to with `useSpeechRecognitionEvent` and the hook's full API.
+  </Card>
+  <Card title="Permissions" icon="lock" href="/usage/permissions">
+    Understand when to request microphone vs. speech recognizer permissions and how to handle edge cases on iOS.
+  </Card>
+  <Card title="Module methods" icon="cube" href="/api/module-methods">
+    Explore the full `ExpoSpeechRecognitionModule` API including file transcription, volume metering, and iOS audio session control.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
